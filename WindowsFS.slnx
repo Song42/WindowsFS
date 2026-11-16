@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WindowsFS.App/WindowsFS.App.csproj" />
+    <Project Path="src/WindowsFS.Core/WindowsFS.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WindowsFS.App.Tests/WindowsFS.App.Tests.csproj" />
+    <Project Path="tests/WindowsFS.Core.Tests/WindowsFS.Core.Tests.csproj" />
+  </Folder>
+</Solution>
