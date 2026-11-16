@@ -12,6 +12,7 @@
 *.dll
 *.exe
 *.pdb
+*_wpftmp.csproj
 *.msix
 *.msixbundle
 *.appx
