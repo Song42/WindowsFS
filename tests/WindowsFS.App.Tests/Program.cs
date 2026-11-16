@@ -5,6 +5,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Input;
 using System.Windows.Threading;
 using WindowsFS.App;
 using WindowsFS.App.Controls;
@@ -35,6 +36,7 @@ internal static class Program
         var tests = new (string Name, Func<Task> Run)[]
         {
             ("Actual XAML realizes read-only drive and result progress bindings", XamlSmoke),
+            ("Long file lists support precise wheel and scrollbar navigation at compact sizes", LongListScrolling),
             ("Folder navigation, file-type totals, and filtered search stay consistent", Navigation),
             ("Case-distinct folder branches remain independently navigable after scan and restore", CaseDistinctNavigation),
             ("Treemap grouping preserves all represented bytes", GroupedMap),
@@ -126,6 +128,77 @@ internal static class Program
             Check(!window.IsVisible, "The test must not display a native window.");
         }
         finally { window.Close(); }
+    }
+
+    private static async Task LongListScrolling()
+    {
+        var files = Enumerable.Range(0, 1_000).Select(index =>
+            new FileRecord(index == 0 ? @"X:\pagefile.sys" : $@"X:\Fixture\{new string('p', 180)}\file-{index:D4}.bin",
+                index == 0 ? "pagefile.sys" : $"file-{index:D4}.bin", 1_000 - index, ".bin")).ToArray();
+        var bytes = files.Sum(file => file.Size);
+        var result = new ScanResult([new FolderNode(@"X:\", bytes, files.Length)], files,
+            [new FileTypeSummary(".bin", bytes, files.Length)], bytes, files.Length, 1, 0, TimeSpan.FromSeconds(1), false);
+        var vm = new MainViewModel(new StubScanner((_, _, _) => Task.FromResult(result)), null,
+            new SystemItemCatalog(@"X:\Windows", @"X:\"));
+        vm.SelectDriveCommand.Execute(@"X:\");
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            await vm.ScanAsync();
+            var content = (FrameworkElement)window.Content;
+            foreach (var size in new[] { new Size(1440, 920), new Size(1100, 760) })
+            foreach (var view in new[] { "overview", "files" })
+            foreach (var infoVisible in new[] { false, true })
+            {
+                vm.NavigateCommand.Execute(view);
+                vm.SelectedRow = infoVisible ? vm.Rows[0] : null;
+                // This offscreen fixture replaces DataContext after construction, so mirror the
+                // production window's column subscription for the injected view model.
+                ((ColumnDefinition)window.FindName("MapColumn")).Width = vm.IsMapVisible
+                    ? new GridLength(0.85, GridUnitType.Star) : new GridLength(0);
+                RenderSize(content, size);
+                var grid = Descendants<DataGrid>(content).Single();
+                var scroller = Descendants<ScrollViewer>(grid).First();
+                var scrollbar = Descendants<ScrollBar>(scroller).Single(bar => bar.Orientation == Orientation.Vertical);
+                var presenter = Descendants<ScrollContentPresenter>(scroller).First();
+                Check(presenter.ActualHeight >= grid.RowHeight * 4,
+                    $"Only {presenter.ActualHeight / grid.RowHeight:0.0} rows fit in the file list at {size}.");
+                Check(scroller.ScrollableHeight > 0, "The long list did not expose a scrolling range.");
+                Check(Descendants<DataGridRow>(grid).Count() < 100, "The long list realized all rows instead of virtualizing.");
+                scroller.ScrollToTop();
+                RenderSize(content, size);
+                var firstRow = Descendants<DataGridRow>(grid).First();
+                firstRow.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, 0, -120) { RoutedEvent = Mouse.MouseWheelEvent });
+                RenderSize(content, size);
+                Check(scroller.VerticalOffset > 0, "Mouse wheel did not move the file list.");
+                Check(scroller.VerticalOffset <= scroller.ViewportHeight,
+                    "A single wheel notch skipped more than an entire visible page.");
+                scroller.ScrollToVerticalOffset(0.5);
+                RenderSize(content, size);
+                Check(Math.Abs(scroller.VerticalOffset - 0.5) < 0.01,
+                    "File scrolling snapped to whole rows instead of preserving a partial-row offset.");
+                var track = Descendants<Track>(scrollbar).Single();
+                Check(track.Thumb.ActualHeight >= 24, "The scrollbar thumb is too small to target in a long file list.");
+                track.Thumb.RaiseEvent(new DragStartedEventArgs(0, 0) { RoutedEvent = Thumb.DragStartedEvent });
+                track.Thumb.RaiseEvent(new DragDeltaEventArgs(0, track.ActualHeight) { RoutedEvent = Thumb.DragDeltaEvent });
+                track.Thumb.RaiseEvent(new DragCompletedEventArgs(0, track.ActualHeight, false) { RoutedEvent = Thumb.DragCompletedEvent });
+                RenderSize(content, size);
+                Check(grid.ItemContainerGenerator.ContainerFromIndex(999) is DataGridRow,
+                    "Dragging the scrollbar to the bottom did not reach the final file.");
+                Check(Descendants<DataGridRow>(grid).Count() < 100,
+                    "Scrollbar navigation stopped recycling file rows.");
+            }
+        }
+        finally { window.Close(); }
+
+        static void RenderSize(FrameworkElement content, Size size)
+        {
+            content.Measure(size);
+            content.Arrange(new Rect(size));
+            content.UpdateLayout();
+            DrainDispatcher();
+            content.UpdateLayout();
+        }
     }
 
     private static async Task Navigation()
