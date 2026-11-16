@@ -36,6 +36,7 @@ internal static class Program
         {
             ("Actual XAML realizes read-only drive and result progress bindings", XamlSmoke),
             ("Folder navigation, file-type totals, and filtered search stay consistent", Navigation),
+            ("Case-distinct folder branches remain independently navigable after scan and restore", CaseDistinctNavigation),
             ("Treemap grouping preserves all represented bytes", GroupedMap),
             ("Changing target preserves a separately identified result scope", ResultScope),
             ("Cancellation returns a navigable partial result", Cancellation),
@@ -158,6 +159,63 @@ internal static class Program
         Equal("history.bin", vm.Rows.Single().Name);
         vm.Search = "not-in-fixture";
         Check(vm.NoRows, "Empty search results were not reported.");
+    }
+
+    private static async Task CaseDistinctNavigation()
+    {
+        var upperLeaf = new FolderNode($@"{FixturePath}\Case\Data\UpperOnly", 100, 1);
+        var lowerLeaf = new FolderNode($@"{FixturePath}\case\Data\LowerOnly", 300, 1);
+        var upperData = new FolderNode($@"{FixturePath}\Case\Data", 100, 1, [upperLeaf]);
+        var lowerData = new FolderNode($@"{FixturePath}\case\Data", 300, 1, [lowerLeaf]);
+        var upper = new FolderNode($@"{FixturePath}\Case", 100, 1, [upperData]);
+        var lower = new FolderNode($@"{FixturePath}\case", 300, 1, [lowerData]);
+        var root = new FolderNode(FixturePath, 400, 2, [upper, lower]);
+        var result = new ScanResult([root], [], [new FileTypeSummary(".bin", 400, 2)],
+            400, 2, 7, 0, TimeSpan.FromSeconds(1), false);
+        var store = new StubStore();
+        var vm = CreateViewModel(new StubScanner((_, _, _) => Task.FromResult(result)), store);
+        await vm.ScanAsync();
+        AssertBranches(vm);
+        Equal(1, store.SaveCalls);
+
+        var restoredScanner = new StubScanner((_, _, _) => throw new InvalidOperationException("Restore must not enumerate."));
+        var restored = CreateViewModel(restoredScanner, store);
+        await restored.RestoreLastScanAsync();
+        AssertBranches(restored);
+        Equal(0, restoredScanner.ProgressReports.Count);
+
+        void AssertBranches(MainViewModel target)
+        {
+            foreach (var branch in new[] { upper, lower })
+            {
+                target.NavigateCommand.Execute("overview");
+                Equal(2, target.MapItems.Count(item => item.IsDirectory));
+                target.NavigateMap(target.MapItems.Single(item => item.Path == branch.Path));
+                Equal(branch.Path, target.Breadcrumb);
+                Equal(branch.TotalBytes, target.MapItems.Sum(item => item.Size));
+                Equal(branch.Children.Single().Path, target.Rows.Single().Path);
+
+                target.OpenRowCommand.Execute(target.Rows.Single());
+                var data = branch.Children.Single();
+                Equal(data.Path, target.Breadcrumb);
+                Equal(data.Children.Single().Path, target.Rows.Single().Path);
+                Equal(branch.TotalBytes, target.MapItems.Sum(item => item.Size));
+                target.OpenRowCommand.Execute(target.Rows.Single());
+                Equal(data.Children.Single().Path, target.Breadcrumb);
+                Equal(0, target.Rows.Count);
+
+                target.UpCommand.Execute(null);
+                Equal(data.Path, target.Breadcrumb);
+                Equal(data.Children.Single().Path, target.Rows.Single().Path);
+                target.UpCommand.Execute(null);
+                Equal(branch.Path, target.Breadcrumb);
+                Equal(data.Path, target.Rows.Single().Path);
+                target.UpCommand.Execute(null);
+                Equal(FixturePath, target.Breadcrumb);
+                Equal(2, target.Rows.Count);
+                Equal(400L, target.MapItems.Sum(item => item.Size));
+            }
+        }
     }
 
     private static async Task GroupedMap()

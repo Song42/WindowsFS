@@ -40,6 +40,8 @@ The versioned snapshot contains the scan target, timestamp, folder aggregates, b
 
 Normal startup restores the saved snapshot without enumerating its file tree again. The UI identifies it as saved data and displays the analysis time; the result does not claim to reflect subsequent filesystem changes. A user can explicitly run a new scan to refresh it. Corrupt or incompatible snapshots are reported without crashing startup or preventing a fresh scan. Explicit `--scan` startup arguments request a new scan.
 
+Snapshot validation and navigation indexes preserve the exact casing of enumerated paths. Windows directories can enable case-sensitive names, so distinct siblings such as `Case` and `case` must remain separate when saving, restoring, and navigating. Exactly duplicated paths are still rejected as invalid snapshot data.
+
 Compression is not encryption. The snapshot contains potentially personal file names and paths and relies on the Windows user directory's filesystem permissions for access control. It must not be included in source commits, public screenshots, issue attachments, or distributable application packages. Tests inject temporary or in-memory stores and synthetic snapshots instead of using a real user's cache.
 
 Repository hygiene is a separate layer. `.gitignore` excludes generated output, local SDKs, developer state, common credential material, logs, database files, compressed scan snapshots, and dedicated private-data/export directories. It does not inspect source content or untrack existing files. Review the actual staged diff before publishing. Public documentation and test fixtures must use synthetic paths and generated files.

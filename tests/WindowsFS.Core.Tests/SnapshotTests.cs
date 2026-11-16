@@ -9,6 +9,7 @@ internal static class SnapshotTests
     public static (string Name, Func<Task> Run)[] All =>
     [
         ("Snapshot round trip preserves real scan data and timestamp", RoundTrip),
+        ("Snapshot preserves case-distinct paths and rejects exact duplicates", CaseDistinctPaths),
         ("Snapshot restores deep folder trees without recursive JSON", DeepTree),
         ("Missing snapshot does not create a cache", Missing),
         ("Malformed and unsupported snapshots are rejected", InvalidDocuments),
@@ -62,6 +63,51 @@ internal static class SnapshotTests
         Equal(paths[0], loaded.SelectedPath);
         Equal(depth, Flatten(loaded.Result.Roots).Count());
         Check(Flatten(result.Roots).SequenceEqual(Flatten(loaded.Result.Roots)), "Deep hierarchy changed on restore.");
+    }
+
+    private static async Task CaseDistinctPaths()
+    {
+        using var fixture = new Fixture();
+        // Windows supports case-sensitive NTFS directories (for example, those used by WSL).
+        // Construct that scan result directly so this regression also runs without OS setup.
+        var upper = new FolderNode(Path.Combine(fixture.Root, "Cache"), 10, 1);
+        var lower = new FolderNode(Path.Combine(fixture.Root, "cache"), 20, 1);
+        var root = new FolderNode(fixture.Root, 100, 4, [upper, lower]);
+        FileRecord[] files =
+        [
+            new(Path.Combine(upper.Path, "item.bin"), "item.bin", 10, ".bin"),
+            new(Path.Combine(lower.Path, "item.bin"), "item.bin", 20, ".bin"),
+            new(Path.Combine(root.Path, "FILE.bin"), "FILE.bin", 30, ".bin"),
+            new(Path.Combine(root.Path, "file.bin"), "file.bin", 40, ".bin")
+        ];
+        var result = new ScanResult([root], files, [new FileTypeSummary(".bin", 100, 4)],
+            100, 4, 3, 0, TimeSpan.FromMilliseconds(12), false);
+        var path = fixture.PathOf("cache/latest.scan.json.gz");
+        var store = new FileScanResultStore(path);
+        await store.SaveAsync(new SavedScan(result, lower.Path, DateTimeOffset.UtcNow));
+        var loaded = (await store.LoadAsync())!;
+        Equal(lower.Path, loaded.SelectedPath);
+        Check(Flatten(result.Roots).SequenceEqual(Flatten(loaded.Result.Roots)), "Case-distinct folders changed on restore.");
+        Check(result.LargestFiles.SequenceEqual(loaded.Result.LargestFiles), "Case-distinct files changed on restore.");
+
+        JsonObject original;
+        await using (var file = File.OpenRead(path))
+        await using (var gzip = new GZipStream(file, CompressionMode.Decompress))
+            original = (JsonObject)(await JsonNode.ParseAsync(gzip))!;
+        Action<JsonObject>[] duplicatePaths =
+        [
+            document => document["Folders"]![2]!["Path"] = upper.Path,
+            document => document["LargestFiles"]![1]!["Path"] = files[0].Path
+        ];
+        foreach (var corrupt in duplicatePaths)
+        {
+            var document = (JsonObject)original.DeepClone();
+            corrupt(document);
+            await using (var file = File.Create(path))
+            await using (var gzip = new GZipStream(file, CompressionLevel.Fastest))
+                await JsonSerializer.SerializeAsync(gzip, document);
+            await ThrowsAsync<InvalidDataException>(() => store.LoadAsync());
+        }
     }
 
     private static async Task Missing()

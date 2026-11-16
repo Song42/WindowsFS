@@ -164,8 +164,9 @@ public sealed class FileScanResultStore : IScanResultStore
             document.FolderCount != document.Folders.Length || document.LargestFiles.LongLength > document.FileCount)
             throw InvalidSnapshot();
 
-        var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-        var paths = new HashSet<string>(pathComparer);
+        // NTFS directories can opt into case-sensitive names. Preserve the exact paths returned
+        // by enumeration: differently cased siblings are distinct entries even on Windows.
+        var paths = new HashSet<string>(StringComparer.Ordinal);
         var childBytes = new long[document.Folders.Length];
         var childFiles = new long[document.Folders.Length];
         long rootBytes = 0, rootFiles = 0;

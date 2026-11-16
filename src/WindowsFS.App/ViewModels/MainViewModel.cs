@@ -59,8 +59,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private Task? _pendingSave;
     private CancellationTokenSource? _scanCancellation;
     private ScanResult? _result;
-    private Dictionary<string, FolderNode> _folders = new(StringComparer.OrdinalIgnoreCase);
-    private Dictionary<string, string> _parents = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, FolderNode> _folders = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _parents = new(StringComparer.Ordinal);
     private string? _selectedPath;
     private string? _folderPath;
     private string _resultScope = "";
@@ -360,8 +360,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private static (Dictionary<string, FolderNode> Folders, Dictionary<string, string> Parents) IndexFolders(IReadOnlyList<FolderNode> roots)
     {
-        var folders = new Dictionary<string, FolderNode>(StringComparer.OrdinalIgnoreCase);
-        var parents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // Navigation uses paths from the result tree; preserve distinct entries in case-sensitive directories.
+        var folders = new Dictionary<string, FolderNode>(StringComparer.Ordinal);
+        var parents = new Dictionary<string, string>(StringComparer.Ordinal);
         var stack = new Stack<FolderNode>(roots);
         while (stack.TryPop(out var node))
         {
