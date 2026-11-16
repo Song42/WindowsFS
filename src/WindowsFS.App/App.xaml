@@ -178,7 +178,7 @@
       <Setter Property="Foreground" Value="{StaticResource Muted}" />
       <Setter Property="BorderThickness" Value="0,0,0,1" />
       <Setter Property="BorderBrush" Value="{StaticResource Border}" />
-      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="Padding" Value="12,6" />
       <Setter Property="FontWeight" Value="Normal" />
     </Style>
     <Style TargetType="DataGridCell">

@@ -93,8 +93,8 @@
         </Grid.RowDefinitions>
         <Grid>
           <StackPanel>
-            <TextBlock Text="{Binding PageTitle}" FontSize="30" FontWeight="SemiBold" />
-            <TextBlock Text="{Binding PageDescription}" Foreground="{StaticResource Muted}" Margin="0,7,0,0" />
+            <TextBlock Text="{Binding PageTitle}" FontSize="28" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding PageDescription}" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,5,0,0" />
           </StackPanel>
           <Border HorizontalAlignment="Right" VerticalAlignment="Top" Background="#252333" BorderBrush="#413952" BorderThickness="1" CornerRadius="14" Padding="12,6">
             <StackPanel Orientation="Horizontal">
@@ -103,7 +103,7 @@
             </StackPanel>
           </Border>
         </Grid>
-        <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16,12" Margin="0,0,0,12">
+        <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16,6" Margin="0,0,0,12">
           <Grid>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*" />
