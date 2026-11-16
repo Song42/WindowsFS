@@ -18,7 +18,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Directory junctions are not followed", ReparsePoints),
     ("Concurrent calls do not share mutable scan state", ConcurrentScans),
     ("Invalid options fail before starting work", InvalidOptions)
-};
+}.Concat(SnapshotTests.All).ToArray();
 var failed = 0;
 foreach (var test in tests)
 {

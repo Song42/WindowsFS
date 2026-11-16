@@ -9,6 +9,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using WindowsFS.App.Controls;
 using WindowsFS.Core;
+using WindowsFS.Core.Persistence;
 
 namespace WindowsFS.App.ViewModels;
 
@@ -52,6 +53,8 @@ public static class DisplayFormat
 public sealed class MainViewModel : INotifyPropertyChanged
 {
     private readonly IDiskScanner _scanner;
+    private readonly IScanResultStore? _store;
+    private Task? _pendingSave;
     private CancellationTokenSource? _scanCancellation;
     private ScanResult? _result;
     private Dictionary<string, FolderNode> _folders = new(StringComparer.OrdinalIgnoreCase);
@@ -63,22 +66,37 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _search = "";
     private bool _busy;
     private bool _drivesLoaded;
+    private bool _isRestoring;
+    private bool _isSaving;
+    private bool _isRestored;
+    private bool _snapshotSaved;
+    private DateTimeOffset? _scannedAtUtc;
     private string _status = "분석할 드라이브나 폴더를 선택하세요.";
-    private string _currentPath = "메타데이터만 읽고, 분석 결과는 메모리에 보관합니다.";
+    private string _currentPath = "파일 내용은 읽지 않으며, 완료된 분석은 이 PC에 자동 저장합니다.";
     private long _bytes, _files, _folderCount, _skipped;
     private TimeSpan _elapsed;
     private IReadOnlyList<ResultRow> _rows = [];
     private IReadOnlyList<MapItem> _mapItems = [];
     private ResultRow? _selectedRow;
 
-    public MainViewModel() : this(new DiskScanner()) { }
-    public MainViewModel(IDiskScanner scanner)
+    public MainViewModel() : this(new DiskScanner(), new FileScanResultStore(Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "WindowsFS", "Cache", "latest.scan.json.gz"))) { }
+
+    // Injected scanners use an explicit store so tests and alternative hosts never write a user's cache implicitly.
+    public MainViewModel(IDiskScanner scanner, IScanResultStore? store = null)
     {
         _scanner = scanner;
-        ScanCommand = new RelayCommand(async _ => await ScanAsync(), _ => !IsBusy && _drivesLoaded && (_selectedPath is not null || Drives.Count > 0));
-        CancelCommand = new RelayCommand(_ => { _scanCancellation?.Cancel(); Status = "중지하는 중… 지금까지의 결과를 정리합니다."; }, _ => IsBusy);
-        ChooseFolderCommand = new RelayCommand(_ => ChooseFolder(), _ => !IsBusy);
-        SelectDriveCommand = new RelayCommand(p => SelectPath(p as string), _ => !IsBusy);
+        _store = store;
+        ScanCommand = new RelayCommand(async _ => await ScanAsync(), _ => IsIdle && _drivesLoaded && (_selectedPath is not null || Drives.Count > 0));
+        CancelCommand = new RelayCommand(_ =>
+        {
+            if (_scanCancellation is null) return;
+            _scanCancellation.Cancel();
+            Status = "중지하는 중… 지금까지의 결과를 정리합니다.";
+        }, _ => IsBusy && !IsSaving && _scanCancellation is not null);
+        ChooseFolderCommand = new RelayCommand(_ => ChooseFolder(), _ => IsIdle);
+        SelectDriveCommand = new RelayCommand(p => SelectPath(p as string), _ => IsIdle);
         NavigateCommand = new RelayCommand(p => { _view = p as string ?? "overview"; _search = ""; Changed(nameof(Search)); RefreshView(); });
         OpenRowCommand = new RelayCommand(p => OpenRow(p as ResultRow ?? SelectedRow), _ => !IsBusy);
         RevealCommand = new RelayCommand(_ => RevealSelected(), _ => SelectedRow is { Path.Length: > 0 } && _view != "types");
@@ -100,7 +118,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand UpCommand { get; }
     public ICommand HomeCommand { get; }
     public bool IsBusy { get => _busy; private set { _busy = value; Changed(); Changed(nameof(IsIdle)); Changed(nameof(ScanLabel)); CommandManager.InvalidateRequerySuggested(); } }
-    public bool IsIdle => !IsBusy;
+    public bool IsIdle => !IsBusy && !IsRestoring;
+    public bool IsRestoring { get => _isRestoring; private set { _isRestoring = value; Changed(); Changed(nameof(IsIdle)); Changed(nameof(ScanState)); CommandManager.InvalidateRequerySuggested(); } }
+    public bool IsSaving { get => _isSaving; private set { _isSaving = value; Changed(); Changed(nameof(ScanState)); CommandManager.InvalidateRequerySuggested(); } }
     public bool HasResult => _result is not null;
     public bool ShowEmpty => _result is null;
     public bool ShowMap => _view is "overview" or "folders";
@@ -111,7 +131,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsTypes => _view == "types";
     public bool IsAllDrivesSelected => _selectedPath is null;
     public string ResultScope => $"현재 결과 · {_resultScope}";
-    public string ScanLabel => _result is null ? "분석 시작" : "다시 분석";
+    public string ScanLabel => _result is null ? "분석 시작" : "새로 분석";
+    public string SnapshotDescription => _scannedAtUtc is null ? "" :
+        $"{_scannedAtUtc.Value.ToLocalTime():yyyy-MM-dd HH:mm:ss} 분석 · " +
+        (_snapshotSaved ? "이 PC에 저장됨 · 변경 사항은 새로 분석하면 반영됩니다." :
+         _result?.IsCancelled == true ? "부분 결과 · 이전에 저장한 완료 결과는 유지됩니다." : "아직 저장되지 않음");
     public string TargetLabel => _selectedPath ?? "모든 로컬 드라이브";
     public string Status { get => _status; private set { _status = value; Changed(); } }
     public string CurrentPath { get => _currentPath; private set { _currentPath = value; Changed(); } }
@@ -121,7 +145,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string Elapsed => _elapsed.TotalHours >= 1 ? _elapsed.ToString(@"h\:mm\:ss") : _elapsed.ToString(@"mm\:ss");
     public string Speed => _elapsed.TotalSeconds > 0 ? $"{_files / _elapsed.TotalSeconds:N0} 파일/초" : "분석 대기";
     public string Skipped => _skipped.ToString("N0");
-    public string ScanState => IsBusy ? "분석 중" : _result is null ? "준비됨" : _result.IsCancelled ? "부분 결과" : "분석 완료";
+    public string ScanState => IsRestoring ? "불러오는 중" : IsSaving ? "저장 중" : IsBusy ? "분석 중" : _result is null ? "준비됨" : _result.IsCancelled ? "부분 결과" : _isRestored ? "저장된 분석" : "분석 완료";
     public string PageTitle => _view switch { "files" => "가장 큰 파일", "folders" => "폴더 탐색", "types" => "파일 형식", _ => "공간 분석" };
     public string PageDescription => _view switch { "files" => "전체 분석에서 가장 큰 파일 최대 1,000개 · 크기순", "folders" => "하위 폴더를 두 번 클릭해 더 깊이 살펴보세요.", "types" => "확장자별로 합산한 파일 크기 · 크기순", _ => "무엇이 공간을 차지하는지, 한눈에 확인하세요." };
     public string TableTitle => _view switch { "folders" => "하위 폴더", "types" => "형식별 사용량", _ => "가장 큰 파일" };
@@ -137,7 +161,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public async Task InitializeAsync(string? initialPath = null)
     {
-        var items = await Task.Run(() =>
+        var driveDiscovery = Task.Run(() =>
         {
             var drives = new List<DriveItem>();
             foreach (var drive in DriveInfo.GetDrives())
@@ -152,7 +176,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
             }
             return drives;
         });
+        // Load the saved metadata while drive capacity labels are being read. Never trigger a scan on a normal launch.
+        if (string.IsNullOrWhiteSpace(initialPath)) await RestoreLastScanAsync();
+        var items = await driveDiscovery;
         foreach (var drive in items) Drives.Add(drive);
+        SelectPath(_selectedPath);
         _drivesLoaded = true;
         CommandManager.InvalidateRequerySuggested();
         if (!string.IsNullOrWhiteSpace(initialPath))
@@ -162,15 +190,52 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task RestoreLastScanAsync()
+    {
+        if (_store is null || IsBusy || IsRestoring) return;
+        IsRestoring = true;
+        Status = "저장된 분석을 불러오는 중…";
+        try
+        {
+            var saved = await _store.LoadAsync();
+            if (saved is null)
+            {
+                Status = "분석할 드라이브나 폴더를 선택하세요. 완료 후 자동 저장됩니다.";
+                return;
+            }
+            if (saved.Result.IsCancelled) throw new InvalidDataException("Incomplete saved scan.");
+            await ApplyResultAsync(saved.Result);
+            SelectPath(saved.SelectedPath);
+            _resultScope = TargetLabel;
+            _scannedAtUtc = saved.ScannedAtUtc;
+            _snapshotSaved = _isRestored = true;
+            Status = "저장된 분석을 불러왔습니다. 재스캔 없이 결과를 탐색할 수 있습니다.";
+            CurrentPath = "저장 시점의 결과입니다. 최신 상태가 필요하면 ‘새로 분석’을 선택하세요.";
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            Status = "저장된 분석을 읽을 수 없습니다. 새로 분석하면 다시 저장됩니다.";
+        }
+        finally
+        {
+            IsRestoring = false;
+            NotifyResult();
+            RefreshView();
+        }
+    }
+
     public async Task ScanAsync()
     {
-        if (IsBusy) return;
+        if (IsBusy || IsRestoring) return;
         var roots = _selectedPath is null ? Drives.Select(d => d.Path).ToArray() : [_selectedPath];
         if (roots.Length == 0) { Status = "분석 가능한 드라이브가 없습니다. 폴더를 선택하세요."; return; }
         using var cancellation = new CancellationTokenSource();
         _scanCancellation = cancellation;
         IsBusy = true;
         _result = null;
+        _isRestored = _snapshotSaved = false;
+        _scannedAtUtc = null;
+        Changed(nameof(SnapshotDescription));
         _resultScope = TargetLabel;
         Changed(nameof(ResultScope));
         _folders.Clear(); _parents.Clear(); _folderPath = null;
@@ -188,14 +253,26 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 CurrentPath = p.CurrentPath;
                 NotifyStatistics();
             });
-            _result = await _scanner.ScanAsync(roots, progress, cancellation.Token);
-            _bytes = _result.TotalBytes; _files = _result.FileCount; _folderCount = _result.FolderCount; _skipped = _result.SkippedCount; _elapsed = _result.Elapsed;
-            // Build lookup tables off the dispatcher, including very large folder trees.
-            var result = _result;
-            var index = await Task.Run(() => IndexFolders(result.Roots));
-            _folders = index.Folders; _parents = index.Parents;
+            var result = await _scanner.ScanAsync(roots, progress, cancellation.Token);
+            _scanCancellation = null;
+            CommandManager.InvalidateRequerySuggested();
+            _scannedAtUtc = DateTimeOffset.UtcNow;
+            await ApplyResultAsync(result);
+            if (_selectedPath is not null && result.Roots.Count == 1)
+            {
+                // Persist the scanner's canonical target, including when --scan used a relative path.
+                SelectPath(result.Roots[0].Path);
+                _resultScope = TargetLabel;
+            }
             Status = result.IsCancelled ? "분석을 중지했습니다. 지금까지 확인한 부분 결과입니다." : $"분석 완료 · {result.FileCount:N0}개 파일을 확인했습니다.";
             CurrentPath = _skipped > 0 ? $"권한 제한·링크·오프라인 항목 {_skipped:N0}개 제외 · 파일의 논리적 크기 기준" : "파일의 논리적 크기 기준 · 실제 디스크 사용량과 다를 수 있습니다.";
+            if (!result.IsCancelled && _store is not null)
+            {
+                IsSaving = true;
+                Status = "분석 완료 · 결과를 이 PC에 저장하는 중…";
+                _pendingSave = SaveSnapshotAsync(new SavedScan(result, _selectedPath, _scannedAtUtc.Value));
+                await _pendingSave;
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or OperationCanceledException)
         {
@@ -205,13 +282,47 @@ public sealed class MainViewModel : INotifyPropertyChanged
         finally
         {
             _scanCancellation = null;
+            IsSaving = false;
             IsBusy = false;
-            NotifyStatistics(); Changed(nameof(HasResult)); Changed(nameof(ShowEmpty)); Changed(nameof(NoRows)); Changed(nameof(ScanLabel));
+            NotifyResult();
             RefreshView();
         }
     }
 
     public void Cancel() => _scanCancellation?.Cancel();
+
+    public Task WaitForPendingSaveAsync() => _pendingSave ?? Task.CompletedTask;
+
+    private async Task SaveSnapshotAsync(SavedScan snapshot)
+    {
+        try
+        {
+            await _store!.SaveAsync(snapshot);
+            _snapshotSaved = true;
+            Status = $"분석 완료 · {snapshot.Result.FileCount:N0}개 파일 · 자동 저장됨";
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            Status = "분석은 완료했지만 결과를 저장하지 못했습니다. 저장 공간과 접근 권한을 확인하세요.";
+        }
+    }
+
+    private async Task ApplyResultAsync(ScanResult result)
+    {
+        // Indexing a saved tree does not touch any scanned paths or read their current metadata.
+        var index = await Task.Run(() => IndexFolders(result.Roots));
+        _result = result;
+        _folders = index.Folders; _parents = index.Parents;
+        _folderPath = null;
+        _bytes = result.TotalBytes; _files = result.FileCount; _folderCount = result.FolderCount;
+        _skipped = result.SkippedCount; _elapsed = result.Elapsed;
+    }
+
+    private void NotifyResult()
+    {
+        NotifyStatistics();
+        foreach (var name in new[] { nameof(HasResult), nameof(ShowEmpty), nameof(NoRows), nameof(ScanLabel), nameof(ResultScope), nameof(SnapshotDescription) }) Changed(name);
+    }
 
     public void NavigateMap(MapItem item)
     {

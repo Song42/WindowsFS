@@ -4,7 +4,7 @@ WindowsFS is a native Windows desktop application. The first release answers a f
 
 ## Boundaries
 
-`WindowsFS.Core` contains the scan contract, directory traversal, aggregation, and result models. It has no dependency on WPF. `WindowsFS.App` owns presentation, drive selection, navigation, UI dispatch, and Explorer integration. The UI consumes `IDiskScanner`, allowing a later scan provider to replace enumeration without coupling the engine to controls.
+`WindowsFS.Core` contains the scan contract, directory traversal, aggregation, result models, and snapshot persistence contract. It has no dependency on WPF. `WindowsFS.App` owns presentation, drive selection, navigation, UI dispatch, the user-specific cache location, and Explorer integration. The UI consumes `IDiskScanner` and `IScanResultStore`, allowing later providers to replace enumeration or storage without coupling those services to controls.
 
 New analysis capabilities should use explicit service contracts. A future physical-allocation scanner, duplicate detector, or file-operation service should declare its own semantics and permissions. The first release has no dynamic plugin loading or arbitrary third-party code execution. Extensibility here means separate components and replaceable interfaces.
 
@@ -26,9 +26,15 @@ The app uses ordinary filesystem permissions. It does not request elevation, rea
 
 ## Privacy and persistence
 
-The application has no account service, telemetry endpoint, scan cache, or automatic scan export. Paths and aggregates remain in process memory for the active session. Read-only scanning does not alter the scanned files. Opening a selected location delegates to Windows Explorer; copying a selected path explicitly sends that path to the Windows clipboard. A user-selected network or UNC folder is accessed through the operating system's filesystem APIs, not an application telemetry service.
+The application automatically persists its latest completed scan to `%LOCALAPPDATA%\WindowsFS\Cache\latest.scan.json.gz`. This location is outside the repository and uses the current Windows user's local application-data directory, rather than the roaming profile. The application has no account service, telemetry endpoint, or cache upload/synchronization service. Read-only scanning does not alter the scanned files. Opening a selected location delegates to Windows Explorer; copying a selected path explicitly sends that path to the Windows clipboard. A user-selected network or UNC folder is accessed through the operating system's filesystem APIs, not an application telemetry service.
 
-Repository hygiene is a separate layer. `.gitignore` excludes generated output, local SDKs, developer state, common credential material, logs, database files, and dedicated private-data/export directories. It does not inspect source content or untrack existing files. Review the actual staged diff before publishing. Public documentation and test fixtures must use synthetic paths and generated files.
+The versioned snapshot contains the scan target, timestamp, folder aggregates, bounded largest-file list, extension summaries, and statistics. Folder records are stored in a flat representation and reconstructed iteratively so deeply nested directory trees do not rely on recursive JSON serialization. Serialization and loading run away from the UI thread, with a 512 MiB limit on expanded JSON in both directions. A completed temporary file in the same cache directory atomically replaces the previous snapshot; failed or interrupted saves leave the existing snapshot intact. Normal window closing waits for an in-flight save to finish. Cancellation results remain navigable in memory but do not replace the last complete snapshot. Only one complete snapshot is retained, including when a new scan uses a different target.
+
+Normal startup restores the saved snapshot without enumerating its file tree again. The UI identifies it as saved data and displays the analysis time; the result does not claim to reflect subsequent filesystem changes. A user can explicitly run a new scan to refresh it. Corrupt or incompatible snapshots are reported without crashing startup or preventing a fresh scan. Explicit `--scan` startup arguments request a new scan.
+
+Compression is not encryption. The snapshot contains potentially personal file names and paths and relies on the Windows user directory's filesystem permissions for access control. It must not be included in source commits, public screenshots, issue attachments, or distributable application packages. Tests inject temporary or in-memory stores and synthetic snapshots instead of using a real user's cache.
+
+Repository hygiene is a separate layer. `.gitignore` excludes generated output, local SDKs, developer state, common credential material, logs, database files, compressed scan snapshots, and dedicated private-data/export directories. It does not inspect source content or untrack existing files. Review the actual staged diff before publishing. Public documentation and test fixtures must use synthetic paths and generated files.
 
 ## Validation and distribution
 

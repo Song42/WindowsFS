@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -9,6 +10,7 @@ using WindowsFS.App;
 using WindowsFS.App.Controls;
 using WindowsFS.App.ViewModels;
 using WindowsFS.Core;
+using WindowsFS.Core.Persistence;
 
 namespace WindowsFS.App.Tests;
 
@@ -36,7 +38,15 @@ internal static class Program
             ("Treemap grouping preserves all represented bytes", GroupedMap),
             ("Changing target preserves a separately identified result scope", ResultScope),
             ("Cancellation returns a navigable partial result", Cancellation),
-            ("Late progress from an earlier scan cannot overwrite a new scan", StaleProgress)
+            ("Late progress from an earlier scan cannot overwrite a new scan", StaleProgress),
+            ("Saved scans restore without enumeration and remain navigable", RestoreSavedScan),
+            ("Completed scans save their scope and restore in another view model", SaveCompletedScan),
+            ("Cancelled scans preserve the previous completed snapshot", PreserveCompletedSnapshot),
+            ("Missing snapshots do not start an automatic scan", MissingSnapshot),
+            ("Unreadable and corrupt snapshots permit an explicit fresh scan", SnapshotLoadFailure),
+            ("A failed snapshot write retains both results and the previous save", SnapshotSaveFailure),
+            ("Restoring a snapshot blocks overlapping restores and scans", RestoreConcurrency),
+            ("Pending saves ignore late progress and can be awaited before closing", PendingSave)
         };
         var failures = 0;
         foreach (var test in tests)
@@ -215,9 +225,212 @@ internal static class Program
         Equal("4", vm.FileCount);
     }
 
-    private static MainViewModel CreateViewModel(IDiskScanner scanner)
+    private static async Task RestoreSavedScan()
     {
-        var vm = new MainViewModel(scanner);
+        var capturedAt = new DateTimeOffset(2026, 11, 10, 1, 23, 45, TimeSpan.Zero);
+        var saved = new SavedScan(FixtureResult(), FixturePath, capturedAt);
+        var store = new StubStore(saved);
+        var scanner = new StubScanner((_, _, _) => throw new InvalidOperationException("Restore must not enumerate."));
+        var vm = CreateViewModel(scanner, store);
+
+        await vm.RestoreLastScanAsync();
+
+        Equal(1, store.LoadCalls);
+        Equal(0, store.SaveCalls);
+        Equal(0, scanner.ProgressReports.Count);
+        Check(vm.HasResult && !vm.IsBusy && !vm.IsRestoring && !vm.ShowEmpty,
+            "A stored snapshot did not become an interactive result.");
+        Equal("저장된 분석", vm.ScanState);
+        Equal(FixturePath, vm.TargetLabel);
+        Check(vm.ResultScope.Contains(FixturePath, StringComparison.Ordinal), "The saved target was lost.");
+        Check(vm.SnapshotDescription.Contains(capturedAt.ToLocalTime().ToString("yyyy-MM-dd"), StringComparison.Ordinal),
+            "The saved scan date must remain visible instead of implying live data.");
+        Equal(DisplayFormat.Bytes(1_000), vm.TotalSize);
+        Equal("4", vm.FileCount);
+        Equal(1_000L, vm.MapItems.Sum(item => item.Size));
+        vm.NavigateMap(vm.MapItems.Single(item => item.IsDirectory));
+        Equal("Archive", vm.Rows.Single().Name);
+        vm.OpenRowCommand.Execute(vm.Rows.Single());
+        Equal(200L, vm.MapItems.Sum(item => item.Size));
+        vm.UpCommand.Execute(null);
+        Equal("Archive", vm.Rows.Single().Name);
+        vm.NavigateCommand.Execute("types");
+        Equal(1_000L, vm.Rows.Sum(row => row.Bytes));
+        vm.NavigateCommand.Execute("files");
+        vm.Search = "history";
+        Equal("history.bin", vm.Rows.Single().Name);
+        Equal(0, scanner.ProgressReports.Count);
+    }
+
+    private static async Task SaveCompletedScan()
+    {
+        var store = new StubStore();
+        var scanner = new StubScanner((_, _, _) => Task.FromResult(FixtureResult()));
+        var vm = CreateViewModel(scanner, store);
+        var started = DateTimeOffset.UtcNow;
+
+        await vm.ScanAsync();
+
+        Equal(1, store.SaveCalls);
+        Check(store.Saved is not null, "A completed scan was not saved.");
+        var saved = store.Saved!;
+        Equal(FixturePath, saved.SelectedPath!);
+        Equal(1_000L, saved.Result.TotalBytes);
+        Equal(4L, saved.Result.FileCount);
+        Check(!saved.Result.IsCancelled, "A complete save was marked partial.");
+        Check(saved.ScannedAtUtc >= started && saved.ScannedAtUtc <= DateTimeOffset.UtcNow,
+            "The saved scan timestamp is not from this scan.");
+
+        var restoredScanner = new StubScanner((_, _, _) => throw new InvalidOperationException("Restart must use the save."));
+        var restored = CreateViewModel(restoredScanner, store);
+        await restored.RestoreLastScanAsync();
+        Equal(0, restoredScanner.ProgressReports.Count);
+        Equal(vm.TotalSize, restored.TotalSize);
+        Equal(vm.FileCount, restored.FileCount);
+        Equal(vm.ResultScope, restored.ResultScope);
+        Equal(1, store.SaveCalls);
+
+        // A null selected path means the all-drives scope, not an empty target string.
+        vm.SelectDriveCommand.Execute(null);
+        await vm.ScanAsync();
+        Check(store.Saved!.SelectedPath is null, "The all-drives scope was not preserved.");
+        var allDrivesRestored = CreateViewModel(restoredScanner, store);
+        await allDrivesRestored.RestoreLastScanAsync();
+        Check(allDrivesRestored.IsAllDrivesSelected, "The all-drives selection was not restored.");
+        Equal("모든 로컬 드라이브", allDrivesRestored.TargetLabel);
+    }
+
+    private static async Task PreserveCompletedSnapshot()
+    {
+        var previous = new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow.AddDays(-1));
+        var store = new StubStore(previous);
+        var vm = CreateViewModel(new StubScanner((_, _, _) =>
+            Task.FromResult(FixtureResult() with { IsCancelled = true })), store);
+        await vm.RestoreLastScanAsync();
+        await vm.ScanAsync();
+
+        Equal(0, store.SaveCalls);
+        Check(ReferenceEquals(previous, store.Saved), "A partial scan overwrote the last completed save.");
+        Check(vm.HasResult && !vm.IsBusy, "The user lost the in-session partial result.");
+        Equal("부분 결과", vm.ScanState);
+        Equal(1_000L, vm.MapItems.Sum(item => item.Size));
+
+        var restored = CreateViewModel(new StubScanner((_, _, _) =>
+            throw new InvalidOperationException("Restore must not enumerate.")), store);
+        await restored.RestoreLastScanAsync();
+        Equal("저장된 분석", restored.ScanState);
+        Equal(DisplayFormat.Bytes(previous.Result.TotalBytes), restored.TotalSize);
+    }
+
+    private static async Task MissingSnapshot()
+    {
+        var store = new StubStore();
+        var scanner = new StubScanner((_, _, _) => throw new InvalidOperationException("Missing save must not trigger a scan."));
+        var vm = CreateViewModel(scanner, store);
+        await vm.RestoreLastScanAsync();
+        Equal(1, store.LoadCalls);
+        Equal(0, scanner.ProgressReports.Count);
+        Check(vm.ShowEmpty && !vm.HasResult && !vm.IsBusy && !vm.IsRestoring,
+            "A first launch should remain ready for explicit user input.");
+    }
+
+    private static async Task SnapshotLoadFailure()
+    {
+        foreach (var error in new Exception[]
+        {
+            new InvalidDataException("Synthetic corrupt snapshot"),
+            new IOException("Synthetic cache read failure"),
+            new UnauthorizedAccessException("Synthetic cache permission failure")
+        })
+        {
+            var store = new StubStore { OnLoad = _ => Task.FromException<SavedScan?>(error) };
+            var scanner = new StubScanner((_, _, _) => Task.FromResult(FixtureResult()));
+            var vm = CreateViewModel(scanner, store);
+            await vm.RestoreLastScanAsync();
+            Equal(0, scanner.ProgressReports.Count);
+            Check(!vm.IsRestoring && !vm.IsBusy && vm.ShowEmpty,
+                "A cache failure left the app stuck while loading.");
+            Check(vm.Status.Contains("저장", StringComparison.Ordinal), "A failed restore was not explained.");
+            Check(!vm.Status.Contains("Synthetic", StringComparison.Ordinal), "Raw cache errors leaked into the user-facing status.");
+            await vm.ScanAsync();
+            Equal(1, scanner.ProgressReports.Count);
+            Check(vm.HasResult && !vm.IsBusy, "An explicit scan could not recover from a bad cache.");
+        }
+    }
+
+    private static async Task SnapshotSaveFailure()
+    {
+        var previous = new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow.AddDays(-1));
+        var store = new StubStore(previous)
+        {
+            OnSave = (_, _) => Task.FromException(new IOException("Synthetic cache write failure"))
+        };
+        var vm = CreateViewModel(new StubScanner((_, _, _) => Task.FromResult(FixtureResult())), store);
+        await vm.ScanAsync();
+        Equal(1, store.SaveCalls);
+        Check(ReferenceEquals(previous, store.Saved), "A failed save replaced the previous snapshot.");
+        Check(vm.HasResult && !vm.IsBusy && !vm.IsRestoring, "A save failure discarded usable scan results.");
+        Equal(DisplayFormat.Bytes(1_000), vm.TotalSize);
+        Equal(4, vm.Rows.Count);
+        Check(vm.Status.Contains("저장", StringComparison.Ordinal), "A failed save was not explained.");
+        Check(!vm.Status.Contains("Synthetic", StringComparison.Ordinal), "Raw save errors leaked into the status.");
+    }
+
+    private static async Task RestoreConcurrency()
+    {
+        var completion = new TaskCompletionSource<SavedScan?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new StubStore { OnLoad = _ => completion.Task };
+        var scanner = new StubScanner((_, _, _) => throw new InvalidOperationException("A scan overlapped restoration."));
+        var vm = CreateViewModel(scanner, store);
+        var pending = vm.RestoreLastScanAsync();
+        Check(vm.IsRestoring, "The app did not report an outstanding snapshot load.");
+        Check(!vm.ScanCommand.CanExecute(null) && !vm.SelectDriveCommand.CanExecute(null) &&
+            !vm.ChooseFolderCommand.CanExecute(null), "Conflicting actions remained enabled during restore.");
+        var overlappingRestore = vm.RestoreLastScanAsync();
+        await vm.ScanAsync();
+        Equal(1, store.LoadCalls);
+        Equal(0, scanner.ProgressReports.Count);
+        completion.SetResult(new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow.AddMinutes(-1)));
+        await Task.WhenAll(pending, overlappingRestore);
+        Check(vm.HasResult && !vm.IsRestoring, "A pending snapshot load did not settle.");
+        Check(vm.SelectDriveCommand.CanExecute(null) && vm.ChooseFolderCommand.CanExecute(null),
+            "Target selection did not recover after restore.");
+    }
+
+    private static async Task PendingSave()
+    {
+        var saveStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new StubStore
+        {
+            OnSave = (_, _) => { saveStarted.TrySetResult(); return finishSave.Task; }
+        };
+        var scanner = new StubScanner((_, _, _) => Task.FromResult(FixtureResult()));
+        var vm = CreateViewModel(scanner, store);
+        var scan = vm.ScanAsync();
+        try
+        {
+            await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Check(vm.IsSaving && !vm.CancelCommand.CanExecute(null),
+                "A completed scan save must not be treated as a cancellable scan.");
+            var closingWait = vm.WaitForPendingSaveAsync();
+            Check(!closingWait.IsCompleted, "Closing could bypass an outstanding snapshot write.");
+            scanner.ProgressReports.Single()!.Report(new ScanProgress(1, 1, 1, 0,
+                TimeSpan.FromSeconds(99), "old progress"));
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Equal(DisplayFormat.Bytes(1_000), vm.TotalSize);
+            Equal("4", vm.FileCount);
+            finishSave.TrySetResult();
+            await Task.WhenAll(scan, closingWait);
+            Check(!vm.IsBusy && !vm.IsSaving, "The pending save did not settle.");
+            Equal(1_000L, store.Saved!.Result.TotalBytes);
+        }
+        finally { finishSave.TrySetResult(); }
+    }
+
+    private static MainViewModel CreateViewModel(IDiskScanner scanner, IScanResultStore? store = null)
+    {
+        var vm = new MainViewModel(scanner, store);
         vm.Drives.Add(new DriveItem(FixturePath, "Fixture volume (X:)", "Fixture capacity", 62.5));
         vm.SelectDriveCommand.Execute(FixturePath);
         return vm;
@@ -313,6 +526,28 @@ internal static class Program
         {
             ProgressReports.Add(progress);
             return scan(roots, progress, cancellationToken);
+        }
+    }
+
+    private sealed class StubStore(SavedScan? initial = null) : IScanResultStore
+    {
+        public SavedScan? Saved { get; private set; } = initial;
+        public int LoadCalls { get; private set; }
+        public int SaveCalls { get; private set; }
+        public Func<CancellationToken, Task<SavedScan?>>? OnLoad { get; init; }
+        public Func<SavedScan, CancellationToken, Task>? OnSave { get; init; }
+
+        public Task<SavedScan?> LoadAsync(CancellationToken cancellationToken = default)
+        {
+            LoadCalls++;
+            return OnLoad?.Invoke(cancellationToken) ?? Task.FromResult(Saved);
+        }
+
+        public async Task SaveAsync(SavedScan snapshot, CancellationToken cancellationToken = default)
+        {
+            SaveCalls++;
+            if (OnSave is not null) await OnSave(snapshot, cancellationToken);
+            Saved = snapshot;
         }
     }
 }

@@ -95,7 +95,7 @@
                 <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="#9ED4BE" Margin="0,0,8,0" />
                 <TextBlock Text="로컬에서만, 안전하게" FontSize="11" Foreground="#B4D7C9" />
               </StackPanel>
-              <TextBlock Text="파일 내용은 읽지 않습니다.&#xA;분석 결과는 저장하지 않습니다." Foreground="{StaticResource Muted}" FontSize="10" LineHeight="17" Margin="0,9,0,0" />
+              <TextBlock Text="파일 내용은 읽지 않습니다.&#xA;결과는 이 PC에 저장합니다." Foreground="{StaticResource Muted}" FontSize="10" LineHeight="17" Margin="0,9,0,0" />
             </StackPanel>
           </Border>
         </Grid>
@@ -175,7 +175,8 @@
               <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <StackPanel Margin="0,0,0,12">
-              <TextBlock Text="{Binding ResultScope}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ResultScope}" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,0,0,8" />
+              <TextBlock Text="{Binding ResultScope}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ResultScope}" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,0,0,4" />
+              <TextBlock Text="{Binding SnapshotDescription}" TextTrimming="CharacterEllipsis" ToolTip="{Binding SnapshotDescription}" Foreground="{StaticResource Accent}" FontSize="10" Margin="0,0,0,8" />
               <DockPanel Visibility="{Binding ShowFolderNavigation, Converter={StaticResource Visible}}">
                 <Button Content="↑" Command="{Binding UpCommand}" Padding="12,6" ToolTip="상위 폴더" />
                 <Button Content="전체" Command="{Binding HomeCommand}" Padding="12,6" Margin="7,0,12,0" />

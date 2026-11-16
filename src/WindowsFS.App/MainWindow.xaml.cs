@@ -10,6 +10,8 @@ namespace WindowsFS.App;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel = new();
+    private bool _closeAfterSave;
+    private bool _waitingForSave;
     public MainWindow()
     {
         InitializeComponent();
@@ -33,7 +35,17 @@ public partial class MainWindow : Window
         await _viewModel.InitializeAsync(index >= 0 && index + 1 < args.Length ? args[index + 1] : null);
     }
 
-    private void WindowClosing(object? sender, CancelEventArgs e) => _viewModel.Cancel();
+    private async void WindowClosing(object? sender, CancelEventArgs e)
+    {
+        _viewModel.Cancel();
+        if (_closeAfterSave || !_viewModel.IsSaving) return;
+        e.Cancel = true;
+        if (_waitingForSave) return;
+        _waitingForSave = true;
+        await _viewModel.WaitForPendingSaveAsync();
+        _closeAfterSave = true;
+        Close();
+    }
     private void MinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     private void MaximizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     private void CloseClick(object sender, RoutedEventArgs e) => Close();

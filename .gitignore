@@ -70,7 +70,10 @@ id_rsa*
 id_ed25519*
 
 # Scan exports, user-file inventories, databases, and private test captures
-# The app does not persist scans. Keep any future manual exports in these folders.
+# The default scan cache lives outside the repo in LOCALAPPDATA/WindowsFS/Cache.
+# Also exclude copied snapshots and manual exports from source control.
+/Cache/
+/cache/
 /scan-results/
 /exports/
 /local-data/
@@ -78,6 +81,7 @@ id_ed25519*
 /screenshots/
 /captures/
 *.scan.json
+*.scan.json.gz
 *.scan.csv
 *.scan.tsv
 *.log
