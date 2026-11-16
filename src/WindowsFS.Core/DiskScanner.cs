@@ -38,7 +38,7 @@ public sealed class DiskScanner : IDiskScanner
         var candidates = roots.Select(root =>
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(root);
-            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+            return ScanPath.NormalizeRoot(root);
         }).OrderBy(static root => root.Length);
         var normalized = new List<string>();
         foreach (var candidate in candidates)
@@ -198,14 +198,17 @@ public sealed class DiskScanner : IDiskScanner
             private void ReadDirectory(FolderNode folder)
             {
                 // Recheck queued directories: a directory may have changed since its parent was read.
-                var attributes = File.GetAttributes(folder.Path);
+                // Win32 normalization can turn a literal NTFS name such as ". " or "..."
+                // into its parent. Always open the exact enumerated path, or traversal can loop.
+                var enumerationPath = ScanPath.ForFileSystemAccess(folder.Path);
+                var attributes = File.GetAttributes(enumerationPath);
                 if ((attributes & (FileAttributes.ReparsePoint | FileAttributes.Offline)) != 0 ||
                     (attributes & FileAttributes.Directory) == 0)
                 {
                     _pendingSkipped++;
                     return;
                 }
-                var entries = new FileSystemEnumerable<bool>(folder.Path, Visit,
+                var entries = new FileSystemEnumerable<bool>(enumerationPath, Visit,
                     new EnumerationOptions
                     {
                         RecurseSubdirectories = false,
@@ -226,7 +229,7 @@ public sealed class DiskScanner : IDiskScanner
                 }
                 else if (entry.IsDirectory)
                 {
-                    var child = new FolderNode(entry.ToFullPath());
+                    var child = new FolderNode(Path.Join(_current.Path, entry.FileName));
                     _current.AddChild(child);
                     Interlocked.Increment(ref state._pendingDirectories);
                     Interlocked.Increment(ref state._folderCount);
@@ -249,7 +252,7 @@ public sealed class DiskScanner : IDiskScanner
                     if (LargestFiles.Count < state._options.LargestFileLimit ||
                         (LargestFiles.TryPeek(out _, out var minimum) && bytes > minimum))
                     {
-                        var path = entry.ToFullPath();
+                        var path = Path.Join(_current.Path, entry.FileName);
                         KeepLargest(LargestFiles, new FileRecord(path, Path.GetFileName(path), bytes, extension),
                             state._options.LargestFileLimit);
                     }

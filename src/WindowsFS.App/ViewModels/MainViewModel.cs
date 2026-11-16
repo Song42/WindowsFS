@@ -10,6 +10,7 @@ using Microsoft.Win32;
 using WindowsFS.App.Controls;
 using WindowsFS.Core;
 using WindowsFS.Core.Persistence;
+using WindowsFS.Core.SystemItems;
 
 namespace WindowsFS.App.ViewModels;
 
@@ -54,6 +55,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 {
     private readonly IDiskScanner _scanner;
     private readonly IScanResultStore? _store;
+    private readonly SystemItemCatalog _systemCatalog;
     private Task? _pendingSave;
     private CancellationTokenSource? _scanCancellation;
     private ScanResult? _result;
@@ -78,16 +80,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private IReadOnlyList<ResultRow> _rows = [];
     private IReadOnlyList<MapItem> _mapItems = [];
     private ResultRow? _selectedRow;
+    private SystemItemInfo? _systemInfo;
+    private bool _systemInfoDismissed;
 
     public MainViewModel() : this(new DiskScanner(), new FileScanResultStore(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "WindowsFS", "Cache", "latest.scan.json.gz"))) { }
 
     // Injected scanners use an explicit store so tests and alternative hosts never write a user's cache implicitly.
-    public MainViewModel(IDiskScanner scanner, IScanResultStore? store = null)
+    public MainViewModel(IDiskScanner scanner, IScanResultStore? store = null, SystemItemCatalog? systemCatalog = null)
     {
         _scanner = scanner;
         _store = store;
+        _systemCatalog = systemCatalog ?? new SystemItemCatalog();
         ScanCommand = new RelayCommand(async _ => await ScanAsync(), _ => IsIdle && _drivesLoaded && (_selectedPath is not null || Drives.Count > 0));
         CancelCommand = new RelayCommand(_ =>
         {
@@ -103,6 +108,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         CopyPathCommand = new RelayCommand(_ => CopySelectedPath(), _ => SelectedRow is { Path.Length: > 0 } && _view != "types");
         UpCommand = new RelayCommand(_ => { _folderPath = _folderPath is not null && _parents.TryGetValue(_folderPath, out var parent) ? parent : null; RefreshView(); }, _ => _folderPath is not null);
         HomeCommand = new RelayCommand(_ => { _folderPath = null; RefreshView(); });
+        DismissSystemInfoCommand = new RelayCommand(_ => { _systemInfoDismissed = true; NotifySystemInfo(); });
+        ShowSystemInfoCommand = new RelayCommand(_ => { _systemInfoDismissed = false; NotifySystemInfo(); }, _ => CanShowSystemInfo);
+        OpenSystemHelpCommand = new RelayCommand(_ => OpenSystemHelp(), _ => CanShowSystemInfo);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -117,6 +125,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand CopyPathCommand { get; }
     public ICommand UpCommand { get; }
     public ICommand HomeCommand { get; }
+    public ICommand DismissSystemInfoCommand { get; }
+    public ICommand ShowSystemInfoCommand { get; }
+    public ICommand OpenSystemHelpCommand { get; }
+    public SystemItemInfo? SystemInfo => _systemInfo;
+    public bool CanShowSystemInfo => _systemInfo is not null;
+    public bool HasSystemInfo => CanShowSystemInfo && !_systemInfoDismissed;
+    public bool IsMapVisible => ShowMap && !HasSystemInfo;
     public bool IsBusy { get => _busy; private set { _busy = value; Changed(); Changed(nameof(IsIdle)); Changed(nameof(ScanLabel)); CommandManager.InvalidateRequerySuggested(); } }
     public bool IsIdle => !IsBusy && !IsRestoring;
     public bool IsRestoring { get => _isRestoring; private set { _isRestoring = value; Changed(); Changed(nameof(IsIdle)); Changed(nameof(ScanState)); CommandManager.InvalidateRequerySuggested(); } }
@@ -149,7 +164,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string PageTitle => _view switch { "files" => "가장 큰 파일", "folders" => "폴더 탐색", "types" => "파일 형식", _ => "공간 분석" };
     public string PageDescription => _view switch { "files" => "전체 분석에서 가장 큰 파일 최대 1,000개 · 크기순", "folders" => "하위 폴더를 두 번 클릭해 더 깊이 살펴보세요.", "types" => "확장자별로 합산한 파일 크기 · 크기순", _ => "무엇이 공간을 차지하는지, 한눈에 확인하세요." };
     public string TableTitle => _view switch { "folders" => "하위 폴더", "types" => "형식별 사용량", _ => "가장 큰 파일" };
-    public string TableHint => _view == "folders" ? "직접 포함된 파일은 지도에서 별도로 표시됩니다." : _view == "types" ? "확장자가 없는 파일도 포함합니다." : "상위 1,000개 · 파일명 또는 경로 검색";
+    public string TableHint => _view == "folders" ? "시스템 폴더를 선택하면 용도와 필요성을 안내합니다." : _view == "types" ? "확장자가 없는 파일도 포함합니다." : "상위 1,000개 · 시스템 파일을 선택하면 설명 표시";
     public string Breadcrumb => _folderPath ?? "분석한 모든 드라이브 / 폴더";
     public string MapTitle => _view == "folders" ? "이 폴더의 공간 구성" : "용량 지도";
     public string ResultCount => $"{Rows.Count:N0}개 항목";
@@ -157,7 +172,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public IReadOnlyList<ResultRow> Rows { get => _rows; private set { _rows = value; Changed(); Changed(nameof(ResultCount)); Changed(nameof(NoRows)); } }
     public bool NoRows => _result is not null && Rows.Count == 0;
     public IReadOnlyList<MapItem> MapItems { get => _mapItems; private set { _mapItems = value; Changed(); } }
-    public ResultRow? SelectedRow { get => _selectedRow; set { _selectedRow = value; Changed(); CommandManager.InvalidateRequerySuggested(); } }
+    public ResultRow? SelectedRow
+    {
+        get => _selectedRow;
+        set
+        {
+            _selectedRow = value;
+            Changed();
+            UpdateSystemInfo();
+            CommandManager.InvalidateRequerySuggested();
+        }
+    }
 
     public async Task InitializeAsync(string? initialPath = null)
     {
@@ -365,7 +390,36 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         foreach (var name in new[] { nameof(PageTitle), nameof(PageDescription), nameof(TableTitle), nameof(TableHint), nameof(ShowMap), nameof(ShowFolderNavigation), nameof(Breadcrumb), nameof(MapTitle), nameof(IsOverview), nameof(IsFiles), nameof(IsFolders), nameof(IsTypes) }) Changed(name);
         RefreshRows(); RefreshMap();
+        Changed(nameof(IsMapVisible));
         CommandManager.InvalidateRequerySuggested();
+    }
+
+    private void UpdateSystemInfo()
+    {
+        // Descriptions are an exact-path catalog lookup; selecting an item never opens its contents.
+        _systemInfo = _view == "types" ? null : _selectedRow is { } row
+            ? _systemCatalog.Describe(row.Path, row.IsDirectory)
+            : _view == "folders" && _folderPath is not null
+                ? _systemCatalog.Describe(_folderPath, true) : null;
+        _systemInfoDismissed = false;
+        NotifySystemInfo();
+    }
+
+    private void NotifySystemInfo()
+    {
+        Changed(nameof(SystemInfo)); Changed(nameof(CanShowSystemInfo));
+        Changed(nameof(HasSystemInfo)); Changed(nameof(IsMapVisible));
+        CommandManager.InvalidateRequerySuggested();
+    }
+
+    private void OpenSystemHelp()
+    {
+        if (_systemInfo is null || !Uri.TryCreate(_systemInfo.SourceUrl, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps ||
+            !(uri.Host.Equals("microsoft.com", StringComparison.OrdinalIgnoreCase) ||
+              uri.Host.EndsWith(".microsoft.com", StringComparison.OrdinalIgnoreCase))) return;
+        try { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
+        catch (Win32Exception) { Status = "공식 도움말을 열 수 없습니다."; }
     }
 
     private IEnumerable<FolderNode> ScopeFolders()

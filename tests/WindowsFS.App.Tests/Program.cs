@@ -11,6 +11,7 @@ using WindowsFS.App.Controls;
 using WindowsFS.App.ViewModels;
 using WindowsFS.Core;
 using WindowsFS.Core.Persistence;
+using WindowsFS.Core.SystemItems;
 
 namespace WindowsFS.App.Tests;
 
@@ -46,7 +47,10 @@ internal static class Program
             ("Unreadable and corrupt snapshots permit an explicit fresh scan", SnapshotLoadFailure),
             ("A failed snapshot write retains both results and the previous save", SnapshotSaveFailure),
             ("Restoring a snapshot blocks overlapping restores and scans", RestoreConcurrency),
-            ("Pending saves ignore late progress and can be awaited before closing", PendingSave)
+            ("Pending saves ignore late progress and can be awaited before closing", PendingSave),
+            ("System explanations match known selections without classifying user files", SystemItemSelection),
+            ("Known folder explanations follow navigation and support dismissing", SystemFolderNavigation),
+            ("Actual XAML renders the selected system explanation", SystemItemXaml)
         };
         var failures = 0;
         foreach (var test in tests)
@@ -426,6 +430,128 @@ internal static class Program
             Equal(1_000L, store.Saved!.Result.TotalBytes);
         }
         finally { finishSave.TrySetResult(); }
+    }
+
+    private static async Task SystemItemSelection()
+    {
+        var vm = CreateSystemViewModel();
+        await vm.ScanAsync();
+        Check(!vm.HasSystemInfo && vm.SystemInfo is null, "An unselected overview should not guess a system item.");
+
+        vm.SelectedRow = vm.Rows.Single(row => row.Path == @"X:\pagefile.sys");
+        Check(vm.SystemInfo is not null && vm.HasSystemInfo && vm.CanShowSystemInfo,
+            "The known page file did not receive a system explanation.");
+        Check(vm.OpenSystemHelpCommand.CanExecute(null), "A known system item should offer its official reference.");
+        Check(!vm.IsMapVisible, "The map must yield space to the selected explanation.");
+        var info = vm.SystemInfo!;
+        Check(new[] { info.Title, info.Purpose, info.ManagedBy, info.Necessity, info.CleanupAdvice, info.MatchBasis }
+            .All(text => !string.IsNullOrWhiteSpace(text)), "The explanation omitted a requested field.");
+        Check(Uri.TryCreate(info.SourceUrl, UriKind.Absolute, out var source) && source.Scheme == Uri.UriSchemeHttps,
+            "A known item must provide an HTTPS reference without using the selected file path.");
+
+        vm.DismissSystemInfoCommand.Execute(null);
+        Check(!vm.HasSystemInfo && vm.CanShowSystemInfo && vm.IsMapVisible,
+            "Dismissing an explanation should restore the map without losing the item metadata.");
+        vm.ShowSystemInfoCommand.Execute(null);
+        Check(vm.HasSystemInfo && !vm.IsMapVisible, "A dismissed explanation could not be reopened.");
+
+        foreach (var path in new[] { @"X:\Windows\System32\personal-notes.txt",
+                     @"X:\Users\Sample\Documents\pagefile.sys", @"X:\Users\Sample\Documents\report.docx" })
+        {
+            vm.SelectedRow = vm.Rows.Single(row => row.Path == path);
+            Check(vm.SystemInfo is null && !vm.HasSystemInfo && !vm.CanShowSystemInfo,
+                "A user file inherited system classification from a name or ancestor directory.");
+            Check(!vm.OpenSystemHelpCommand.CanExecute(null), "An unknown item should not offer unrelated system help.");
+        }
+
+        vm.SelectedRow = vm.Rows.Single(row => row.Path == @"X:\pagefile.sys");
+        vm.NavigateCommand.Execute("types");
+        vm.SelectedRow = vm.Rows[0];
+        Check(vm.SystemInfo is null && !vm.HasSystemInfo && !vm.CanShowSystemInfo,
+            "An extension aggregate retained a stale system explanation.");
+    }
+
+    private static async Task SystemFolderNavigation()
+    {
+        var vm = CreateSystemViewModel();
+        await vm.ScanAsync();
+        var userNotes = vm.Rows.Single(row => row.Path == @"X:\Windows\System32\personal-notes.txt");
+        vm.NavigateMap(vm.MapItems.Single(item => item.Path == @"X:\Windows"));
+        Check(vm.IsFolders && vm.SystemInfo is not null && vm.HasSystemInfo,
+            "Entering the known Windows folder did not expose its own explanation.");
+        var windowsTitle = vm.SystemInfo!.Title;
+        vm.OpenRowCommand.Execute(vm.Rows.Single(row => row.Path == @"X:\Windows\System32"));
+        Check(vm.SystemInfo is not null && vm.SystemInfo.Title != windowsTitle,
+            "The explanation did not follow navigation to System32.");
+        var system32Title = vm.SystemInfo!.Title;
+        vm.SelectedRow = userNotes;
+        Check(vm.SystemInfo is null && !vm.HasSystemInfo && !vm.CanShowSystemInfo,
+            "An unknown selected file inherited its currently open system folder's explanation.");
+        vm.SelectedRow = null;
+        Equal(system32Title, vm.SystemInfo!.Title);
+        vm.DismissSystemInfoCommand.Execute(null);
+        Check(!vm.HasSystemInfo && vm.CanShowSystemInfo, "A current-folder explanation could not be dismissed.");
+        vm.ShowSystemInfoCommand.Execute(null);
+        Check(vm.HasSystemInfo, "A current-folder explanation could not be reopened.");
+        vm.UpCommand.Execute(null);
+        Equal(windowsTitle, vm.SystemInfo!.Title);
+        vm.UpCommand.Execute(null);
+        Check(vm.SystemInfo is null && !vm.HasSystemInfo, "An unknown drive root retained its child's explanation.");
+        vm.OpenRowCommand.Execute(vm.Rows.Single(row => row.Path == @"X:\Users"));
+        Check(vm.SystemInfo is null && !vm.HasSystemInfo, "The user profile tree was mislabeled as a system item.");
+    }
+
+    private static async Task SystemItemXaml()
+    {
+        var vm = CreateSystemViewModel();
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            await vm.ScanAsync();
+            vm.SelectedRow = vm.Rows.Single(row => row.Path == @"X:\pagefile.sys");
+            var content = (FrameworkElement)window.Content;
+            Render(content);
+            var panel = window.FindName("SystemInfoPanel") as FrameworkElement;
+            Check(panel is not null && panel.Visibility == Visibility.Visible,
+                "The system explanation panel is not displayed for a known selection.");
+            var info = vm.SystemInfo!;
+            var visibleText = Descendants<TextBlock>(panel!).Select(text => text.Text).ToArray();
+            foreach (var expected in new[] { info.Title, info.Purpose, info.ManagedBy,
+                         info.Necessity, info.CleanupAdvice, info.MatchBasis })
+                Check(visibleText.Contains(expected), "A requested explanation field is not bound in the actual XAML.");
+
+            vm.SelectedRow = vm.Rows.Single(row => row.Path.EndsWith("report.docx", StringComparison.Ordinal));
+            Render(content);
+            Equal(Visibility.Collapsed, panel!.Visibility);
+            Check(!window.IsVisible, "The explanation test must not open a desktop window.");
+        }
+        finally { window.Close(); }
+    }
+
+    private static MainViewModel CreateSystemViewModel()
+    {
+        var vm = new MainViewModel(new StubScanner((_, _, _) => Task.FromResult(SystemFixtureResult())),
+            null, new SystemItemCatalog(@"X:\Windows", @"X:\"));
+        vm.SelectDriveCommand.Execute(@"X:\");
+        return vm;
+    }
+
+    private static ScanResult SystemFixtureResult()
+    {
+        var system32 = new FolderNode(@"X:\Windows\System32", 100, 1);
+        var windows = new FolderNode(@"X:\Windows", 100, 1, [system32]);
+        var documents = new FolderNode(@"X:\Users\Sample\Documents", 500, 2);
+        var profile = new FolderNode(@"X:\Users\Sample", 500, 2, [documents]);
+        var users = new FolderNode(@"X:\Users", 500, 2, [profile]);
+        var root = new FolderNode(@"X:\", 1_000, 4, [users, windows]);
+        return new ScanResult([root],
+            [new FileRecord(@"X:\pagefile.sys", "pagefile.sys", 400, ".sys"),
+             new FileRecord(@"X:\Users\Sample\Documents\report.docx", "report.docx", 300, ".docx"),
+             new FileRecord(@"X:\Users\Sample\Documents\pagefile.sys", "pagefile.sys", 200, ".sys"),
+             new FileRecord(@"X:\Windows\System32\personal-notes.txt", "personal-notes.txt", 100, ".txt")],
+            [new FileTypeSummary(".sys", 600, 2), new FileTypeSummary(".docx", 300, 1),
+             new FileTypeSummary(".txt", 100, 1)],
+            1_000, 4, 6, 0, TimeSpan.FromSeconds(1), false);
     }
 
     private static MainViewModel CreateViewModel(IDiskScanner scanner, IScanResultStore? store = null)

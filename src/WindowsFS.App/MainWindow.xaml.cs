@@ -23,8 +23,8 @@ public partial class MainWindow : Window
         DataContext = _viewModel;
         _viewModel.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(MainViewModel.ShowMap))
-                MapColumn.Width = _viewModel.ShowMap ? new GridLength(0.85, GridUnitType.Star) : new GridLength(0);
+            if (args.PropertyName == nameof(MainViewModel.IsMapVisible))
+                MapColumn.Width = _viewModel.IsMapVisible ? new GridLength(0.85, GridUnitType.Star) : new GridLength(0);
         };
     }
 

@@ -8,9 +8,17 @@ WindowsFS is a native Windows desktop application. The first release answers a f
 
 New analysis capabilities should use explicit service contracts. A future physical-allocation scanner, duplicate detector, or file-operation service should declare its own semantics and permissions. The first release has no dynamic plugin loading or arbitrary third-party code execution. Extensibility here means separate components and replaceable interfaces.
 
+## System item explanations
+
+`SystemItemCatalog` is an in-memory catalog of source-backed explanations for known Windows paths. It matches an exact standard location and the item kind; it does not inherit a classification from a parent folder or classify a file by basename alone. The catalog does not read executable contents, inspect personal documents, query remote services, or infer an item's actual creator. Its management attribution describes the usual Windows component responsible for that standard location, with an explicit path-based match note and a primary Microsoft reference.
+
+The view model resolves the selected row, or the current known folder when no row is selected. Unknown user files and extension aggregates clear the explanation. The native panel shows purpose, management, necessity, and cleanup guidance; an explicit user action opens the static official reference. Neither catalog lookup nor panel display deletes files or changes system settings. Synthetic tests cover unknown descendants, user copies of system filenames, folder navigation, panel state, and actual XAML bindings.
+
 ## Enumeration and aggregation
 
 The scanner normalizes input roots and removes duplicates and nested roots before starting. A bounded pool of background workers enumerates directories using `FileSystemEnumerable`, reading the metadata returned by the operating system. It does not open file contents or recursively create a `FileInfo` object for every retained result.
+
+Windows filesystem access always uses an extended-length path while results retain readable paths. This preserves literal NTFS names ending in periods or spaces: ordinary Win32 normalization can otherwise interpret a directory named `. ` or `...` as its parent and cause repeated traversal. Root normalization resolves actual `.` and `..` navigation segments without discarding meaningful filename characters. Regression tests require these trees to finish naturally with exact counts.
 
 Each worker maintains a bounded collection of large files. These collections are merged to return the largest 1,000 files by default. Folder nodes and extension aggregates are retained, while the full population of file records is not. Retained memory therefore grows with directory count, extension count, pending directory work, and `worker count × largest-file limit`, rather than with every scanned file path. A drive containing millions of directories can still require significant memory.
 

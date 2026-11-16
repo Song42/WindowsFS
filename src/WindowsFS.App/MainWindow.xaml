@@ -187,8 +187,9 @@
               <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="MapColumn" Width="0.85*" />
                 <ColumnDefinition Width="1.4*" />
+                <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
-              <Border Grid.Column="0" Style="{StaticResource Card}" Padding="16" Margin="0,0,16,0" Visibility="{Binding ShowMap, Converter={StaticResource Visible}}">
+              <Border Grid.Column="0" Style="{StaticResource Card}" Padding="16" Margin="0,0,16,0" Visibility="{Binding IsMapVisible, Converter={StaticResource Visible}}">
                 <Grid>
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -274,10 +275,44 @@
                   </Grid>
                   <Border Grid.Row="3" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="12,10">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                      <Button Content="시스템 설명" Command="{Binding ShowSystemInfoCommand}" Visibility="{Binding CanShowSystemInfo, Converter={StaticResource Visible}}" Padding="11,7" FontSize="11" Margin="0,0,8,0" />
                       <Button Content="경로 복사" Command="{Binding CopyPathCommand}" Padding="11,7" FontSize="11" Margin="0,0,8,0" />
                       <Button Content="탐색기에서 보기 ↗" Command="{Binding RevealCommand}" Padding="11,7" FontSize="11" />
                     </StackPanel>
                   </Border>
+                </Grid>
+              </Border>
+              <Border x:Name="SystemInfoPanel" Grid.Column="2" Style="{StaticResource Card}" Width="326" Margin="16,0,0,0" Padding="18" Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}">
+                <Grid>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+                  <Grid Margin="0,0,0,15">
+                    <StackPanel>
+                      <TextBlock Text="SYSTEM INSIGHT" Foreground="{StaticResource Accent}" FontSize="10" />
+                      <TextBlock Text="시스템 항목 안내" FontSize="17" FontWeight="SemiBold" Margin="0,6,0,0" />
+                    </StackPanel>
+                    <Button Content="✕" Command="{Binding DismissSystemInfoCommand}" HorizontalAlignment="Right" VerticalAlignment="Top" Padding="7,3" Background="Transparent" BorderThickness="0" AutomationProperties.Name="시스템 설명 닫기" />
+                  </Grid>
+                  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,0,8,0">
+                      <TextBlock Text="{Binding SystemInfo.Title}" TextWrapping="Wrap" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
+                      <TextBlock Text="무슨 용도인가요?" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,18,0,5" />
+                      <TextBlock Text="{Binding SystemInfo.Purpose}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
+                      <TextBlock Text="관리 주체" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
+                      <TextBlock Text="{Binding SystemInfo.ManagedBy}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
+                      <TextBlock Text="꼭 필요한가요?" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
+                      <TextBlock Text="{Binding SystemInfo.Necessity}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
+                      <TextBlock Text="공간을 줄이려면" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
+                      <TextBlock Text="{Binding SystemInfo.CleanupAdvice}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
+                      <Border Background="#252333" CornerRadius="7" Padding="10" Margin="0,18,0,0">
+                        <TextBlock Text="{Binding SystemInfo.MatchBasis}" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="10" LineHeight="17" />
+                      </Border>
+                    </StackPanel>
+                  </ScrollViewer>
+                  <Button Grid.Row="2" Content="Microsoft 공식 설명 ↗" Command="{Binding OpenSystemHelpCommand}" Margin="0,15,0,0" Padding="12,9" FontSize="11" />
                 </Grid>
               </Border>
             </Grid>
