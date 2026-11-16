@@ -73,8 +73,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _isRestored;
     private bool _snapshotSaved;
     private DateTimeOffset? _scannedAtUtc;
-    private string _status = "분석할 드라이브나 폴더를 선택하세요.";
-    private string _currentPath = "파일 내용은 읽지 않으며, 완료된 분석은 이 PC에 자동 저장합니다.";
+    private string _status = "분석 대기";
+    private string _currentPath = "";
     private long _bytes, _files, _folderCount, _skipped;
     private TimeSpan _elapsed;
     private IReadOnlyList<ResultRow> _rows = [];
@@ -98,7 +98,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             if (_scanCancellation is null) return;
             _scanCancellation.Cancel();
-            Status = "중지하는 중… 지금까지의 결과를 정리합니다.";
+            Status = "중지 중 · 부분 결과 집계";
         }, _ => IsBusy && !IsSaving && _scanCancellation is not null);
         ChooseFolderCommand = new RelayCommand(_ => ChooseFolder(), _ => IsIdle);
         SelectDriveCommand = new RelayCommand(p => SelectPath(p as string), _ => IsIdle);
@@ -149,8 +149,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string ScanLabel => _result is null ? "분석 시작" : "새로 분석";
     public string SnapshotDescription => _scannedAtUtc is null ? "" :
         $"{_scannedAtUtc.Value.ToLocalTime():yyyy-MM-dd HH:mm:ss} 분석 · " +
-        (_snapshotSaved ? "이 PC에 저장됨 · 변경 사항은 새로 분석하면 반영됩니다." :
-         _result?.IsCancelled == true ? "부분 결과 · 이전에 저장한 완료 결과는 유지됩니다." : "아직 저장되지 않음");
+        (_snapshotSaved ? "저장됨" :
+         _result?.IsCancelled == true ? "부분 결과 · 미저장" : "미저장");
     public string TargetLabel => _selectedPath ?? "모든 로컬 드라이브";
     public string Status { get => _status; private set { _status = value; Changed(); } }
     public string CurrentPath { get => _currentPath; private set { _currentPath = value; Changed(); } }
@@ -162,9 +162,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string Skipped => _skipped.ToString("N0");
     public string ScanState => IsRestoring ? "불러오는 중" : IsSaving ? "저장 중" : IsBusy ? "분석 중" : _result is null ? "준비됨" : _result.IsCancelled ? "부분 결과" : _isRestored ? "저장된 분석" : "분석 완료";
     public string PageTitle => _view switch { "files" => "가장 큰 파일", "folders" => "폴더 탐색", "types" => "파일 형식", _ => "공간 분석" };
-    public string PageDescription => _view switch { "files" => "전체 분석에서 가장 큰 파일 최대 1,000개 · 크기순", "folders" => "하위 폴더를 두 번 클릭해 더 깊이 살펴보세요.", "types" => "확장자별로 합산한 파일 크기 · 크기순", _ => "무엇이 공간을 차지하는지, 한눈에 확인하세요." };
+    public string PageDescription => _view switch { "files" => "최대 1,000개 · 용량순", "folders" => "폴더별 용량 · 두 번 클릭: 하위 폴더 열기", "types" => "확장자별 용량 합계", _ => "파일·폴더별 용량 분포" };
     public string TableTitle => _view switch { "folders" => "하위 폴더", "types" => "형식별 사용량", _ => "가장 큰 파일" };
-    public string TableHint => _view == "folders" ? "시스템 폴더를 선택하면 용도와 필요성을 안내합니다." : _view == "types" ? "확장자가 없는 파일도 포함합니다." : "상위 1,000개 · 시스템 파일을 선택하면 설명 표시";
+    public string TableHint => _view == "folders" ? "선택: 시스템 항목 설명 · 두 번 클릭: 폴더 열기" : _view == "types" ? "확장자 없는 파일 포함" : "상위 1,000개 · 선택: 시스템 항목 설명";
     public string Breadcrumb => _folderPath ?? "분석한 모든 드라이브 / 폴더";
     public string MapTitle => _view == "folders" ? "이 폴더의 공간 구성" : "용량 지도";
     public string ResultCount => $"{Rows.Count:N0}개 항목";
@@ -219,13 +219,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (_store is null || IsBusy || IsRestoring) return;
         IsRestoring = true;
-        Status = "저장된 분석을 불러오는 중…";
+        Status = "저장된 분석 로딩 중";
         try
         {
             var saved = await _store.LoadAsync();
             if (saved is null)
             {
-                Status = "분석할 드라이브나 폴더를 선택하세요. 완료 후 자동 저장됩니다.";
+                Status = "분석 대기";
                 return;
             }
             if (saved.Result.IsCancelled) throw new InvalidDataException("Incomplete saved scan.");
@@ -234,12 +234,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _resultScope = TargetLabel;
             _scannedAtUtc = saved.ScannedAtUtc;
             _snapshotSaved = _isRestored = true;
-            Status = "저장된 분석을 불러왔습니다. 재스캔 없이 결과를 탐색할 수 있습니다.";
-            CurrentPath = "저장 시점의 결과입니다. 최신 상태가 필요하면 ‘새로 분석’을 선택하세요.";
+            Status = "저장된 분석";
+            CurrentPath = "";
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.SecurityException)
         {
-            Status = "저장된 분석을 읽을 수 없습니다. 새로 분석하면 다시 저장됩니다.";
+            Status = "저장된 분석 로딩 실패";
         }
         finally
         {
@@ -253,7 +253,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (IsBusy || IsRestoring) return;
         var roots = _selectedPath is null ? Drives.Select(d => d.Path).ToArray() : [_selectedPath];
-        if (roots.Length == 0) { Status = "분석 가능한 드라이브가 없습니다. 폴더를 선택하세요."; return; }
+        if (roots.Length == 0) { Status = "분석 가능한 드라이브 없음"; return; }
         using var cancellation = new CancellationTokenSource();
         _scanCancellation = cancellation;
         IsBusy = true;
@@ -266,7 +266,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _folders.Clear(); _parents.Clear(); _folderPath = null;
         Rows = []; MapItems = [];
         _bytes = _files = _folderCount = _skipped = 0; _elapsed = TimeSpan.Zero;
-        Status = "파일 내용을 열지 않고 저장 공간을 분석하고 있습니다…";
+        Status = "분석 중";
         CurrentPath = TargetLabel;
         NotifyStatistics(); Changed(nameof(HasResult)); Changed(nameof(ShowEmpty)); Changed(nameof(NoRows));
         try
@@ -289,20 +289,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 SelectPath(result.Roots[0].Path);
                 _resultScope = TargetLabel;
             }
-            Status = result.IsCancelled ? "분석을 중지했습니다. 지금까지 확인한 부분 결과입니다." : $"분석 완료 · {result.FileCount:N0}개 파일을 확인했습니다.";
-            CurrentPath = _skipped > 0 ? $"권한 제한·링크·오프라인 항목 {_skipped:N0}개 제외 · 파일의 논리적 크기 기준" : "파일의 논리적 크기 기준 · 실제 디스크 사용량과 다를 수 있습니다.";
+            Status = result.IsCancelled ? "분석 중지 · 부분 결과" : "분석 완료";
+            CurrentPath = "";
             if (!result.IsCancelled && _store is not null)
             {
                 IsSaving = true;
-                Status = "분석 완료 · 결과를 이 PC에 저장하는 중…";
+                Status = "분석 완료 · 저장 중";
                 _pendingSave = SaveSnapshotAsync(new SavedScan(result, _selectedPath, _scannedAtUtc.Value));
                 await _pendingSave;
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or OperationCanceledException)
         {
-            Status = "분석을 완료하지 못했습니다. 경로와 접근 권한을 확인한 뒤 다시 시도하세요.";
-            CurrentPath = "드라이브 연결이 끊겼거나 경로를 읽을 수 없습니다.";
+            Status = "분석 실패 · 경로 또는 접근 권한 오류";
+            CurrentPath = "";
         }
         finally
         {
@@ -324,11 +324,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             await _store!.SaveAsync(snapshot);
             _snapshotSaved = true;
-            Status = $"분석 완료 · {snapshot.Result.FileCount:N0}개 파일 · 자동 저장됨";
+            Status = "분석 완료 · 저장됨";
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.SecurityException)
         {
-            Status = "분석은 완료했지만 결과를 저장하지 못했습니다. 저장 공간과 접근 권한을 확인하세요.";
+            Status = "분석 완료 · 저장 실패";
         }
     }
 
@@ -420,7 +420,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             !(uri.Host.Equals("microsoft.com", StringComparison.OrdinalIgnoreCase) ||
               uri.Host.EndsWith(".microsoft.com", StringComparison.OrdinalIgnoreCase))) return;
         try { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
-        catch (Win32Exception) { Status = "공식 도움말을 열 수 없습니다."; }
+        catch (Win32Exception) { Status = "문서 열기 실패"; }
     }
 
     private IEnumerable<FolderNode> ScopeFolders()
@@ -473,14 +473,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
             // Explorer selects the item; files are never executed by this app.
             Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
         }
-        catch (Win32Exception) { Status = "파일 탐색기를 열 수 없습니다."; }
+        catch (Win32Exception) { Status = "탐색기 열기 실패"; }
     }
 
     private void CopySelectedPath()
     {
         if (SelectedRow is not { Path.Length: > 0 } row) return;
-        try { Clipboard.SetText(row.Path); Status = "선택한 경로를 클립보드에 복사했습니다."; }
-        catch (System.Runtime.InteropServices.COMException) { Status = "클립보드를 사용할 수 없습니다. 잠시 후 다시 시도하세요."; }
+        try { Clipboard.SetText(row.Path); Status = "경로 복사됨"; }
+        catch (System.Runtime.InteropServices.COMException) { Status = "경로 복사 실패 · 클립보드 접근 오류"; }
     }
 
     private void NotifyStatistics()

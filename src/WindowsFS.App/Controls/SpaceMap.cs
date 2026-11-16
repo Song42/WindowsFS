@@ -41,7 +41,7 @@ public sealed class SpaceMap : FrameworkElement
         Focusable = true;
         ClipToBounds = true;
         SnapsToDevicePixels = true;
-        AutomationProperties.SetName(this, "용량 지도. 방향키로 항목을 선택하고 Enter로 폴더를 탐색합니다.");
+        AutomationProperties.SetName(this, "용량 지도 · 방향키: 항목 선택 · Enter: 폴더 열기");
         ToolTipService.SetInitialShowDelay(this, 250);
         ToolTipService.SetShowDuration(this, 20000);
     }
@@ -80,8 +80,8 @@ public sealed class SpaceMap : FrameworkElement
         if (ActualWidth <= 0 || ActualHeight <= 0) return;
         if (_items.Length == 0)
         {
-            DrawCentered(drawingContext, "분석하면 공간의 흐름이 보입니다", 15, ActualHeight / 2 - 22);
-            DrawCentered(drawingContext, "큰 영역일수록 더 많은 용량을 사용합니다", 12, ActualHeight / 2 + 7);
+            DrawCentered(drawingContext, "표시할 용량 없음", 15, ActualHeight / 2 - 22);
+            DrawCentered(drawingContext, "0 B 항목 제외", 12, ActualHeight / 2 + 7);
             return;
         }
 

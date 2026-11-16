@@ -21,7 +21,6 @@
           <StackPanel Orientation="Horizontal" Margin="22,0" VerticalAlignment="Center">
             <TextBlock Text="◈" Foreground="{StaticResource Accent}" FontSize="20" Margin="0,0,10,0" />
             <TextBlock Text="WindowsFS" FontWeight="SemiBold" VerticalAlignment="Center" />
-            <TextBlock Text=" /  STORAGE EXPLORER" Foreground="#727A8D" FontSize="10" Margin="10,0,0,0" VerticalAlignment="Center" />
           </StackPanel>
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" shell:WindowChrome.IsHitTestVisibleInChrome="True">
             <Button Content="─" Width="46" Padding="0" Style="{StaticResource Nav}" Click="MinimizeClick" AutomationProperties.Name="최소화" />
@@ -35,16 +34,9 @@
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
-          <StackPanel Margin="12,0,0,26">
-            <TextBlock Text="내 PC의 공간," FontSize="20" FontWeight="SemiBold" />
-            <TextBlock Text="더 명확하게." FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource Accent}" Margin="0,3,0,0" />
-          </StackPanel>
-          <StackPanel Grid.Row="1">
-            <TextBlock Text="WORKSPACE" FontSize="10" Foreground="#6E7789" Margin="16,0,0,9" />
+          <StackPanel>
             <Button Command="{Binding NavigateCommand}" CommandParameter="overview" Tag="{Binding IsOverview}" Style="{StaticResource Nav}">
               <StackPanel Orientation="Horizontal">
                 <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Margin="0,0,12,0" />
@@ -70,11 +62,11 @@
               </StackPanel>
             </Button>
           </StackPanel>
-          <StackPanel Grid.Row="2" Margin="0,34,0,0">
-            <TextBlock Text="CONNECTED DRIVES" FontSize="10" Foreground="#6E7789" Margin="16,0,0,9" />
+          <StackPanel Grid.Row="1" Margin="0,34,0,0">
+            <TextBlock Text="드라이브" FontSize="10" Foreground="#6E7789" Margin="16,0,0,9" />
             <Button Content="모든 로컬 드라이브" Command="{Binding SelectDriveCommand}" Tag="{Binding IsAllDrivesSelected}" Style="{StaticResource Nav}" Foreground="{StaticResource Accent}" />
           </StackPanel>
-          <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <ItemsControl ItemsSource="{Binding Drives}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -89,15 +81,6 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
           </ScrollViewer>
-          <Border Grid.Row="4" Background="#20232D" CornerRadius="9" Padding="13" Margin="0,20,0,0">
-            <StackPanel>
-              <StackPanel Orientation="Horizontal">
-                <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="#9ED4BE" Margin="0,0,8,0" />
-                <TextBlock Text="로컬에서만, 안전하게" FontSize="11" Foreground="#B4D7C9" />
-              </StackPanel>
-              <TextBlock Text="파일 내용은 읽지 않습니다.&#xA;결과는 이 PC에 저장합니다." Foreground="{StaticResource Muted}" FontSize="10" LineHeight="17" Margin="0,9,0,0" />
-            </StackPanel>
-          </Border>
         </Grid>
       </Border>
       <Grid Grid.Row="1" Grid.Column="1" Margin="30,26,30,18">
@@ -134,7 +117,7 @@
             <Button Grid.Column="1" Content="폴더 선택" Command="{Binding ChooseFolderCommand}" Margin="0,0,10,0" VerticalAlignment="Center" />
             <Grid Grid.Column="2">
               <Button Content="{Binding ScanLabel}" Command="{Binding ScanCommand}" Style="{StaticResource Primary}" MinWidth="116" VerticalAlignment="Center" Visibility="{Binding IsIdle, Converter={StaticResource Visible}}" ToolTip="F5" />
-              <Button Content="분석 중지" Command="{Binding CancelCommand}" Background="#4B303A" BorderBrush="#6D424B" MinWidth="116" VerticalAlignment="Center" Visibility="{Binding IsBusy, Converter={StaticResource Visible}}" ToolTip="Esc · 현재까지의 결과를 보관합니다." />
+              <Button Content="분석 중지" Command="{Binding CancelCommand}" Background="#4B303A" BorderBrush="#6D424B" MinWidth="116" VerticalAlignment="Center" Visibility="{Binding IsBusy, Converter={StaticResource Visible}}" ToolTip="Esc · 부분 결과 유지" />
             </Grid>
           </Grid>
         </Border>
@@ -160,7 +143,7 @@
               <TextBlock Text="{Binding Speed}" FontSize="10" Foreground="#768094" Margin="0,2,0,0" />
             </StackPanel>
           </Border>
-          <Border Style="{StaticResource Card}" Padding="18,14" ToolTip="접근 권한이 없거나 링크, 오프라인 파일인 항목을 건너뜁니다. 제외된 폴더 안의 파일 수는 알 수 없습니다.">
+          <Border Style="{StaticResource Card}" Padding="18,14" ToolTip="권한 제한·링크·오프라인 항목 제외. 제외된 폴더의 하위 파일 수 미집계.">
             <StackPanel>
               <TextBlock Text="건너뛴 항목" Foreground="{StaticResource Muted}" FontSize="11" />
               <TextBlock Text="{Binding Skipped}" FontSize="27" FontWeight="SemiBold" Margin="0,5,0,0" />
@@ -198,7 +181,7 @@
                   </Grid.RowDefinitions>
                   <StackPanel Margin="0,0,0,16">
                     <TextBlock Text="{Binding MapTitle}" FontSize="15" FontWeight="SemiBold" />
-                    <TextBlock Text="크기가 클수록 더 많은 공간 · 클릭하여 탐색" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,6,0,0" />
+                    <TextBlock Text="영역 크기 = 용량 · 클릭: 폴더 열기" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,6,0,0" />
                   </StackPanel>
                   <controls:SpaceMap Grid.Row="1" Items="{Binding MapItems}" ItemInvoked="MapItemInvoked" MinHeight="140" />
                   <TextBlock Grid.Row="2" Text="폴더별 합산 크기 · 0 B 항목은 지도에서 제외" Foreground="#768094" FontSize="10" Margin="0,13,0,0" />
@@ -219,7 +202,7 @@
                     </StackPanel>
                     <TextBlock Text="{Binding ResultCount}" HorizontalAlignment="Right" VerticalAlignment="Top" Foreground="{StaticResource Muted}" FontSize="11" />
                   </Grid>
-                  <TextBox Grid.Row="1" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=180}" Margin="16,0,16,12" AutomationProperties.Name="결과 검색" ToolTip="현재 목록에서 이름 또는 경로를 검색합니다.">
+                  <TextBox Grid.Row="1" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=180}" Margin="16,0,16,12" AutomationProperties.Name="결과 검색" ToolTip="현재 목록의 이름·경로 검색">
                     <TextBox.Style>
                       <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
                         <Style.Triggers>
@@ -271,7 +254,7 @@
                         </DataGridTemplateColumn>
                       </DataGrid.Columns>
                     </DataGrid>
-                    <TextBlock Text="표시할 항목이 없습니다." Foreground="{StaticResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding NoRows, Converter={StaticResource Visible}}" IsHitTestVisible="False" />
+                    <TextBlock Text="항목 없음" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding NoRows, Converter={StaticResource Visible}}" IsHitTestVisible="False" />
                   </Grid>
                   <Border Grid.Row="3" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="12,10">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
@@ -291,68 +274,36 @@
                   </Grid.RowDefinitions>
                   <Grid Margin="0,0,0,15">
                     <StackPanel>
-                      <TextBlock Text="SYSTEM INSIGHT" Foreground="{StaticResource Accent}" FontSize="10" />
-                      <TextBlock Text="시스템 항목 안내" FontSize="17" FontWeight="SemiBold" Margin="0,6,0,0" />
+                      <TextBlock Text="시스템 항목" FontSize="17" FontWeight="SemiBold" />
                     </StackPanel>
                     <Button Content="✕" Command="{Binding DismissSystemInfoCommand}" HorizontalAlignment="Right" VerticalAlignment="Top" Padding="7,3" Background="Transparent" BorderThickness="0" AutomationProperties.Name="시스템 설명 닫기" />
                   </Grid>
                   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,0,8,0">
                       <TextBlock Text="{Binding SystemInfo.Title}" TextWrapping="Wrap" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
-                      <TextBlock Text="무슨 용도인가요?" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,18,0,5" />
+                      <TextBlock Text="용도" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,18,0,5" />
                       <TextBlock Text="{Binding SystemInfo.Purpose}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
                       <TextBlock Text="관리 주체" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
                       <TextBlock Text="{Binding SystemInfo.ManagedBy}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
-                      <TextBlock Text="꼭 필요한가요?" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
+                      <TextBlock Text="필요성" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
                       <TextBlock Text="{Binding SystemInfo.Necessity}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
-                      <TextBlock Text="공간을 줄이려면" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
+                      <TextBlock Text="정리 방법" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
                       <TextBlock Text="{Binding SystemInfo.CleanupAdvice}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
                       <Border Background="#252333" CornerRadius="7" Padding="10" Margin="0,18,0,0">
                         <TextBlock Text="{Binding SystemInfo.MatchBasis}" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="10" LineHeight="17" />
                       </Border>
                     </StackPanel>
                   </ScrollViewer>
-                  <Button Grid.Row="2" Content="Microsoft 공식 설명 ↗" Command="{Binding OpenSystemHelpCommand}" Margin="0,15,0,0" Padding="12,9" FontSize="11" />
+                  <Button Grid.Row="2" Content="Microsoft 문서 ↗" Command="{Binding OpenSystemHelpCommand}" Margin="0,15,0,0" Padding="12,9" FontSize="11" />
                 </Grid>
               </Border>
             </Grid>
           </Grid>
           <Border Style="{StaticResource Card}" Visibility="{Binding ShowEmpty, Converter={StaticResource Visible}}" Background="#171A22">
-            <Grid>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.3*" />
-                <ColumnDefinition Width="*" />
-              </Grid.ColumnDefinitions>
-              <StackPanel VerticalAlignment="Center" Margin="32,0,20,0">
-                <TextBlock Text="A LITTLE CLARITY. A LOT OF SPACE." Foreground="#AC99DD" FontSize="10" Margin="0,0,0,22" />
-                <TextBlock Text="공간을 차지하는 파일,&#xA;이제 쉽게 찾아보세요." FontSize="29" FontWeight="SemiBold" LineHeight="43" />
-                <TextBlock Text="드라이브 전체 또는 원하는 폴더를 분석하고,&#xA;큰 파일부터 폴더 구성까지 한눈에 확인하세요." Foreground="{StaticResource Muted}" FontSize="13" LineHeight="23" Margin="0,18,0,0" />
-                <TextBlock Text="01  대상 선택     02  분석 시작     03  공간 확인" Foreground="#B3B9C7" FontSize="11" Margin="0,30,0,0" />
-              </StackPanel>
-              <Grid Grid.Column="1" Width="250" Height="250" VerticalAlignment="Center" HorizontalAlignment="Center" Opacity="0.9" IsHitTestVisible="False">
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="1.2*" />
-                  <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="1.3*" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Border Background="#B7A5F5" CornerRadius="10" Margin="4">
-                  <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="#3B3158" FontSize="38" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-                <Border Grid.Column="1" Background="#7199CA" CornerRadius="10" Margin="4" />
-                <Border Grid.Row="1" Background="#68AFA2" CornerRadius="10" Margin="4" />
-                <Grid Grid.Row="1" Grid.Column="1">
-                  <Grid.RowDefinitions>
-                    <RowDefinition />
-                    <RowDefinition />
-                  </Grid.RowDefinitions>
-                  <Border Background="#CF9A87" CornerRadius="10" Margin="4" />
-                  <Border Grid.Row="1" Background="#57516C" CornerRadius="10" Margin="4" />
-                </Grid>
-              </Grid>
-            </Grid>
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+              <TextBlock Text="분석 결과 없음" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+              <TextBlock Text="드라이브·폴더별 용량 분석" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,10,0,0" HorizontalAlignment="Center" />
+            </StackPanel>
           </Border>
         </Grid>
         <Grid Grid.Row="4" Margin="0,13,0,0">
