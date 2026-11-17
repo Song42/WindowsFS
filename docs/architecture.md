@@ -20,7 +20,7 @@ Folder breadcrumbs follow the stored parent index, starting at the analyzed root
 
 `SpaceMap` draws either blocks or a donut using the same bounded `MapItem` collection and palette. Switching the layout changes presentation only: it does not scan, rebuild aggregates, or write a snapshot. The chosen layout stays active during folder and page navigation for the current session. Both layouts support folder activation and keyboard selection. Donut hit testing follows the ring sectors rather than their rectangular bounds, so its center and empty surroundings do not open folders. Small and grouped entries retain their represented bytes.
 
-Map eligibility belongs to the view model; actual visibility depends on the result container's available width. `SpaceMapVisibilityConverter` reserves a fixed 360-pixel map plus a 16-pixel gap, at least 480 pixels for the list, and another 342 pixels when system explanations are open. Selecting a system item does not hide the map when these regions fit. Narrowing the window collapses the map and its column together, and widening it restores the same fixed width automatically.
+Map eligibility belongs to the view model; actual visibility depends on the result container's available width. `SpaceMapVisibilityConverter` reserves a fixed 360-pixel map plus a 16-pixel gap, at least 480 pixels for the list, and a minimum of 342 pixels when details are open. Selecting a system item does not hide the map when these regions fit. Narrowing the window collapses the map and its column together, and widening it restores the same fixed width automatically.
 
 ## System item explanations
 
@@ -69,3 +69,5 @@ The core test executable exercises scanner behavior using generated fixtures. A 
 The core test executable's optional `--benchmark` argument measures generated fixtures and cleans up its temporary data. Both the first scan and the repeated scan can benefit from the OS metadata cache, especially because the fixtures have just been created. These results are useful for regression comparisons on the same machine, not as a cold-cache or full-drive performance guarantee.
 
 Release binaries are not code signed by this repository. Distribution signing and an installer can be added later without changing the scan contract. Performance claims should include device type, tree shape, file/directory counts, cache state, and measured elapsed time; the project does not claim a universal throughput or an MFT-level scan speed.
+
+The details column shares remaining width with the results in a 1:1.4 ratio, with minimum widths of 342 (including the gap) and 480 pixels. Map visibility uses the outer content width so inner column minimums cannot prevent collapse after resizing. Detail fields and system explanation fields use a row-sized responsive panel: two columns when its inner width reaches 496 pixels, otherwise one. Text previews retain the full panel width.

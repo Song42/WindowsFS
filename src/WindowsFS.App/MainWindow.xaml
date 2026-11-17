@@ -185,19 +185,32 @@
                     <MultiBinding Converter="{StaticResource SpaceMapVisibility}" ConverterParameter="Width">
                       <Binding Path="IsMapVisible" />
                       <Binding Path="HasDetailPanel" />
-                      <Binding ElementName="ResultColumns" Path="ActualWidth" />
+                      <Binding ElementName="MainContent" Path="ActualWidth" />
                     </MultiBinding>
                   </ColumnDefinition.Width>
                 </ColumnDefinition>
-                <ColumnDefinition Width="1.4*" />
-                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="1.4*" MinWidth="480" />
+                <ColumnDefinition x:Name="DetailsColumn">
+                  <ColumnDefinition.Style>
+                    <Style TargetType="ColumnDefinition">
+                      <Setter Property="Width" Value="*" />
+                      <Setter Property="MinWidth" Value="342" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasDetailPanel}" Value="False">
+                          <Setter Property="Width" Value="0" />
+                          <Setter Property="MinWidth" Value="0" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </ColumnDefinition.Style>
+                </ColumnDefinition>
               </Grid.ColumnDefinitions>
               <Border x:Name="SpaceMapPanel" Grid.Column="0" Style="{StaticResource Card}" Width="{x:Static controls:SpaceMapVisibilityConverter.MapWidth}" HorizontalAlignment="Left" Padding="16" Margin="0,0,16,0">
                 <Border.Visibility>
                   <MultiBinding Converter="{StaticResource SpaceMapVisibility}">
                     <Binding Path="IsMapVisible" />
                     <Binding Path="HasDetailPanel" />
-                    <Binding ElementName="ResultColumns" Path="ActualWidth" />
+                    <Binding ElementName="MainContent" Path="ActualWidth" />
                   </MultiBinding>
                 </Border.Visibility>
                 <Grid>
@@ -304,7 +317,7 @@
                   </Border>
                 </Grid>
               </Border>
-              <Border x:Name="SystemInfoPanel" Grid.Column="2" Style="{StaticResource Card}" Width="326" Margin="16,0,0,0" Padding="18" Visibility="{Binding HasDetailPanel, Converter={StaticResource Visible}}">
+              <Border x:Name="SystemInfoPanel" Grid.Column="2" Style="{StaticResource Card}" Margin="16,0,0,0" Padding="18" Visibility="{Binding HasDetailPanel, Converter={StaticResource Visible}}">
                 <Grid>
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -320,7 +333,10 @@
                   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,0,8,0">
                       <StackPanel Visibility="{Binding HasDetails, Converter={StaticResource Visible}}">
-                        <ItemsControl ItemsSource="{Binding Details}">
+                        <ItemsControl x:Name="DetailFields" ItemsSource="{Binding Details}">
+                          <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><controls:ResponsiveDetailsPanel /></ItemsPanelTemplate>
+                          </ItemsControl.ItemsPanel>
                           <ItemsControl.ItemTemplate>
                             <DataTemplate>
                               <StackPanel Margin="0,0,0,13">
@@ -335,14 +351,24 @@
                       </StackPanel>
                       <StackPanel Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}">
                       <TextBlock Text="{Binding SystemInfo.Title}" TextWrapping="Wrap" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
+                      <controls:ResponsiveDetailsPanel>
+                      <StackPanel>
                       <TextBlock Text="용도" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,18,0,5" />
                       <TextBlock Text="{Binding SystemInfo.Purpose}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
+                      </StackPanel>
+                      <StackPanel>
                       <TextBlock Text="관리 주체" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
                       <TextBlock Text="{Binding SystemInfo.ManagedBy}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
+                      </StackPanel>
+                      <StackPanel>
                       <TextBlock Text="필요성" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
                       <TextBlock Text="{Binding SystemInfo.Necessity}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
+                      </StackPanel>
+                      <StackPanel>
                       <TextBlock Text="정리 방법" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
                       <TextBlock Text="{Binding SystemInfo.CleanupAdvice}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
+                      </StackPanel>
+                      </controls:ResponsiveDetailsPanel>
                       <Border Background="#252333" CornerRadius="7" Padding="10" Margin="0,18,0,0">
                         <TextBlock Text="{Binding SystemInfo.MatchBasis}" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="10" LineHeight="17" />
                       </Border>

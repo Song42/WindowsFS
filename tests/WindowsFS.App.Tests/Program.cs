@@ -302,6 +302,7 @@ internal static class Program
             var column = (ColumnDefinition)window.FindName("MapColumn");
             var map = Descendants<SpaceMap>(content).Single();
             var originalItems = vm.MapItems;
+            double previousDetailsWidth = 0;
 
             foreach (var width in new[] { 1_440d, 1_650d })
             {
@@ -310,12 +311,27 @@ internal static class Program
                 vm.SelectedRow = vm.Rows.Single(row => row.Path == @"X:\pagefile.sys");
                 LayoutAt(content, new Size(width, 920));
                 Check(vm.HasSystemInfo && IsEffectivelyVisible(details), "The system description did not open.");
+                Check(details.ActualWidth > previousDetailsWidth, "The details panel did not grow with the window.");
+                previousDetailsWidth = details.ActualWidth;
                 AssertFixedMap();
                 Check(Descendants<DataGrid>(content).Single().ActualWidth >= 480,
                     "Showing the map and description squeezed the results below their usable width.");
             }
 
+            LayoutAt(content, new Size(2400, 920));
+            AssertFixedMap();
+            var fields = Descendants<ResponsiveDetailsPanel>((FrameworkElement)window.FindName("DetailFields")).Single();
+            Check(fields.Children.Count >= 3, "The responsive fields were not realized.");
+            var first = fields.Children[0].TranslatePoint(new Point(), fields);
+            var second = fields.Children[1].TranslatePoint(new Point(), fields);
+            var third = fields.Children[2].TranslatePoint(new Point(), fields);
+            Check(second.X > first.X && Math.Abs(second.Y - first.Y) < 0.5 && third.Y > first.Y,
+                "Wide details did not form two columns in row order.");
             LayoutAt(content, new Size(1100, 760));
+            first = fields.Children[0].TranslatePoint(new Point(), fields);
+            second = fields.Children[1].TranslatePoint(new Point(), fields);
+            Check(Math.Abs(second.X - first.X) < 0.5 && second.Y > first.Y,
+                "Narrow details did not return to one column.");
             Check(!IsEffectivelyVisible(mapPanel) && column.ActualWidth == 0 && IsEffectivelyVisible(details),
                 "A narrow window did not prioritize the results and system explanation.");
             Equal(SpaceMapLayout.Donut, map.LayoutMode);
