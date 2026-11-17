@@ -103,36 +103,97 @@ internal static partial class Program
     {
         using var fixture = new PickerFixture();
         var word = Path.Combine(fixture.Root, "word.docx");
-        WritePreviewPackage(word, ("word/document.xml", "<w:document xmlns:w='urn:word'><w:body><w:p><w:r><w:t>문서 본문</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>표 내용</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"));
+        WritePreviewPackage(word,
+            ("word/styles.xml", "<styles><docDefaults><rPrDefault><rPr><sz val='20'/><color val='000000'/></rPr></rPrDefault></docDefaults><style styleId='Title'><rPr><b/><sz val='48'/><color val='FF0000'/></rPr></style></styles>"),
+            ("word/_rels/document.xml.rels", "<Relationships><Relationship Id='picture' Target='media/picture.png'/><Relationship Id='external' Target='https://invalid.test/picture.png' TargetMode='External'/></Relationships>"),
+            ("word/document.xml", """
+            <w:document xmlns:w='urn:word' xmlns:r='urn:rels'><w:body>
+              <w:p><w:pPr><w:pStyle w:val='Title'/></w:pPr><w:r><w:t>Styled title</w:t></w:r></w:p>
+              <w:tbl><w:tblPr><w:tblBorders><w:top w:val='single' w:sz='12'/><w:bottom w:val='single' w:sz='12'/><w:insideV w:val='single' w:sz='12'/></w:tblBorders></w:tblPr>
+                <w:tblGrid><w:gridCol w:w='3000'/><w:gridCol w:w='3000'/></w:tblGrid>
+                <w:tr><w:tc><w:tcPr><w:shd w:fill='00FF00'/></w:tcPr><w:p><w:r><w:t>Green cell</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Second column</w:t></w:r></w:p></w:tc></w:tr>
+              </w:tbl>
+              <w:p><w:r><w:drawing><inline><extent cx='952500' cy='476250'/><blip r:embed='picture'/></inline></w:drawing></w:r></w:p>
+              <w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:r><w:rPr><w:color w:val='0000FF'/><w:sz w:val='48'/></w:rPr><w:t>Second page</w:t></w:r></w:p>
+            </w:body></w:document>
+            """));
+        AddPreviewPicture(word, "word/media/picture.png");
         var sheet = Path.Combine(fixture.Root, "table.xlsx");
         WritePreviewPackage(sheet,
             ("xl/workbook.xml", "<workbook xmlns:r='urn:rels'><sheets><sheet name='Sheet A' r:id='r1'/></sheets></workbook>"),
             ("xl/_rels/workbook.xml.rels", "<Relationships><Relationship Id='r1' Target='worksheets/sheet1.xml'/></Relationships>"),
             ("xl/sharedStrings.xml", "<sst><si><t>공유 문자열</t></si></sst>"),
+            ("xl/styles.xml", "<styleSheet><fonts><font><sz val='18'/><b/><color rgb='FFFF0000'/></font></fonts><fills><fill><patternFill patternType='solid'><fgColor rgb='FF00FF00'/></patternFill></fill></fills><cellXfs><xf fontId='0' fillId='0'/></cellXfs></styleSheet>"),
             ("xl/worksheets/sheet1.xml", "<worksheet><sheetData><row><c r='A1' t='s'><v>0</v></c><c r='B1'><f>EXTERNAL()</f><v>42</v></c><c r='C1' t='inlineStr'><is><t>inline</t></is></c></row></sheetData></worksheet>"));
         var slides = Path.Combine(fixture.Root, "slides.pptx");
         WritePreviewPackage(slides,
             ("ppt/presentation.xml", "<presentation xmlns:r='urn:rels'><sldIdLst><sldId id='9' r:id='r2'/><sldId id='8' r:id='r1'/></sldIdLst></presentation>"),
             ("ppt/_rels/presentation.xml.rels", "<Relationships><Relationship Id='r1' Target='slides/slide1.xml'/><Relationship Id='r2' Target='slides/slide2.xml'/></Relationships>"),
-            ("ppt/slides/slide1.xml", "<slide><p><r><t>Second</t></r></p></slide>"),
-            ("ppt/slides/slide2.xml", "<slide><p><r><t>First</t></r></p></slide>"));
+            ("ppt/slides/slide1.xml", "<slide><cSld><bg><bgPr><solidFill><srgbClr val='0000FF'/></solidFill></bgPr></bg><spTree/></cSld></slide>"),
+            ("ppt/slides/slide2.xml", "<slide xmlns:r='urn:rels'><cSld><bg><bgPr><solidFill><srgbClr val='FF0000'/></solidFill></bgPr></bg><spTree><pic><spPr><xfrm><off x='952500' y='952500'/><ext cx='952500' cy='476250'/></xfrm></spPr><blipFill><blip r:embed='picture'/></blipFill></pic></spTree></cSld></slide>"),
+            ("ppt/slides/_rels/slide2.xml.rels", "<Relationships><Relationship Id='picture' Target='../media/picture.png'/></Relationships>"));
+        AddPreviewPicture(slides, "ppt/media/picture.png");
         var hangul = Path.Combine(fixture.Root, "hangul.hwpx");
-        WritePreviewPackage(hangul, ("Contents/section10.xml", "<section><p><run><t>Section ten</t></run></p></section>"),
-            ("Contents/section2.xml", "<section><p><run><t>Section two</t></run></p></section>"));
+        WritePreviewPackage(hangul, ("Contents/section10.xml", "<section><p><run charPrIDRef='blue'><t>Section ten</t></run></p></section>"),
+            ("Contents/section2.xml", "<section><p><run charPrIDRef='red'><t>Section two</t><pic><curSz width='7500' height='3750'/><img binaryItemIDRef='image1'/></pic></run></p></section>"),
+            ("Contents/header.xml", "<head><charPr id='red' height='2400' textColor='#FF0000'><bold/></charPr><charPr id='blue' height='2400' textColor='#0000FF'/></head>"),
+            ("Contents/content.hpf", "<package><manifest><item id='image1' href='BinData/picture.png'/></manifest></package>"));
+        AddPreviewPicture(hangul, "BinData/picture.png");
         var odt = Path.Combine(fixture.Root, "open.odt");
-        WritePreviewPackage(odt, ("content.xml", "<document><h>Title</h><p>Open document text</p></document>"));
+        WritePreviewPackage(odt, ("content.xml", "<document><automatic-styles><style name='red'><text-properties color='#FF0000' font-size='24pt' font-weight='bold'/></style><style name='green'><table-cell-properties background-color='#00FF00' border='1pt solid #000000'/></style></automatic-styles><body><text><p style-name='red'>Open document text</p><table><table-row><table-cell style-name='green'><p>Green cell</p></table-cell></table-row></table><p><frame width='100px' height='50px'><image href='Pictures/picture.png'/></frame></p></text></body></document>"));
+        AddPreviewPicture(odt, "Pictures/picture.png");
+        var ods = Path.Combine(fixture.Root, "open.ods");
+        WritePreviewPackage(ods, ("content.xml", "<document><automatic-styles><style name='green'><table-cell-properties background-color='#00FF00'/></style></automatic-styles><body><spreadsheet><table><table-column number-columns-repeated='2'/><table-row><table-cell style-name='green' number-columns-spanned='2'><p>Merged cells</p></table-cell><covered-table-cell/></table-row><table-row><table-cell number-columns-repeated='2'><p>Value</p></table-cell></table-row></table></spreadsheet></body></document>"));
+        var odp = Path.Combine(fixture.Root, "open.odp");
+        WritePreviewPackage(odp, ("content.xml", "<document><automatic-styles><style name='red'><text-properties color='#FF0000' font-size='24pt'/></style></automatic-styles><body><presentation><page><frame x='50px' y='50px' width='100px' height='50px'><image href='Pictures/picture.png'/></frame><frame x='50px' y='150px' width='500px' height='100px'><text-box><p style-name='red'>Slide text</p></text-box></frame></page></presentation></body></document>"));
+        AddPreviewPicture(odp, "Pictures/picture.png");
         var before = CapturePickerTree(fixture.Root);
         var reader = new FilePreviewReader();
-        var wordText = (await reader.ReadAsync(PreviewRow(word), 0, CancellationToken.None)).Text;
-        Check(wordText.Contains("문서 본문") && wordText.Contains("표 내용"), "DOCX body/table text was missing.");
-        var sheetText = (await reader.ReadAsync(PreviewRow(sheet), 0, CancellationToken.None)).Text;
-        Check(sheetText.Contains("Sheet A") && sheetText.Contains("A1: 공유 문자열") && sheetText.Contains("B1: 42") && sheetText.Contains("C1: inline") && !sheetText.Contains("EXTERNAL"), "Spreadsheet values or shared strings were incorrect.");
-        var slideText = (await reader.ReadAsync(PreviewRow(slides), 0, CancellationToken.None)).Text;
-        Check(slideText.IndexOf("First", StringComparison.Ordinal) >= 0 && slideText.IndexOf("First", StringComparison.Ordinal) < slideText.IndexOf("Second", StringComparison.Ordinal), "Presentation order was not preserved.");
-        var hangulText = (await reader.ReadAsync(PreviewRow(hangul), 0, CancellationToken.None)).Text;
-        Check(hangulText.IndexOf("Section two", StringComparison.Ordinal) >= 0 && hangulText.IndexOf("Section two", StringComparison.Ordinal) < hangulText.IndexOf("Section ten", StringComparison.Ordinal), "HWPX section order was incorrect.");
-        Check((await reader.ReadAsync(PreviewRow(odt), 0, CancellationToken.None)).Text.Contains("Open document text"), "ODT text was missing.");
+        var first = await reader.ReadAsync(PreviewRow(word), 0, CancellationToken.None);
+        Check(first.Image is { IsFrozen: true } && first.PageCount == 2, "Word did not paginate to detached page images: " + first.Text);
+        Check(PreviewColorCount(first, 'r') > 100 && PreviewColorCount(first, 'g') > 1000 && PreviewColorCount(first, 'y') > 1000, "Word lost styled text, table fill, or embedded image.");
+        var second = await reader.ReadAsync(PreviewRow(word), int.MaxValue, CancellationToken.None);
+        Equal(1, second.PageIndex);
+        Check(PreviewColorCount(second, 'b') > 100 && PreviewColorCount(second, 'g') == 0, "Word page navigation reused the first page.");
+        var workbook = await reader.ReadAsync(PreviewRow(sheet), 0, CancellationToken.None);
+        Check(PreviewColorCount(workbook, 'g') > 1000 && PreviewColorCount(workbook, 'r') > 50, "Spreadsheet cell fill/font formatting was lost: " + workbook.Text);
+        var slide = await reader.ReadAsync(PreviewRow(slides), 0, CancellationToken.None);
+        Equal(2, slide.PageCount);
+        Check(PreviewColorCount(slide, 'r') > 10000 && PreviewColorCount(slide, 'y') > 1000, "Slide order, background, or embedded image was lost.");
+        Check(PreviewColorCount(await reader.ReadAsync(PreviewRow(slides), 1, CancellationToken.None), 'b') > 10000, "Second slide was not rendered.");
+        var hangulPage = await reader.ReadAsync(PreviewRow(hangul), 0, CancellationToken.None);
+        Equal(2, hangulPage.PageCount);
+        Check(PreviewColorCount(hangulPage, 'r') > 100 && PreviewColorCount(hangulPage, 'y') > 1000, "HWPX styles, embedded picture, or numeric section ordering was lost.");
+        Check(PreviewColorCount(await reader.ReadAsync(PreviewRow(hangul), 1, CancellationToken.None), 'b') > 100, "HWPX second section was missing.");
+        var open = await reader.ReadAsync(PreviewRow(odt), 0, CancellationToken.None);
+        Check(PreviewColorCount(open, 'r') > 100 && PreviewColorCount(open, 'g') > 1000 && PreviewColorCount(open, 'y') > 1000, "ODT styled text/table/image was missing: " + open.Text);
+        Check(PreviewColorCount(await reader.ReadAsync(PreviewRow(ods), 0, CancellationToken.None), 'g') > 1000, "ODS styled/merged cells were not rendered.");
+        var openSlide = await reader.ReadAsync(PreviewRow(odp), 0, CancellationToken.None);
+        Check(PreviewColorCount(openSlide, 'r') > 100 && PreviewColorCount(openSlide, 'y') > 1000, "ODP positioned text/image was not rendered.");
         Check(before.SequenceEqual(CapturePickerTree(fixture.Root)), "Document previews modified or extracted files.");
+    }
+
+    private static void AddPreviewPicture(string package, string name)
+    {
+        using var archive = ZipFile.Open(package, ZipArchiveMode.Update);
+        using var stream = archive.CreateEntry(name).Open();
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 0, 255, 255, 255 }, 4)));
+        encoder.Save(stream);
+    }
+
+    private static int PreviewColorCount(FilePreview preview, char color)
+    {
+        Check(preview.Image is { IsFrozen: true }, "Document did not render: " + preview.Text);
+        var image = new FormatConvertedBitmap(preview.Image!, PixelFormats.Bgra32, null, 0);
+        var bytes = new byte[image.PixelWidth * image.PixelHeight * 4]; image.CopyPixels(bytes, image.PixelWidth * 4, 0);
+        var count = 0;
+        for (var i = 0; i < bytes.Length; i += 4)
+        {
+            var b = bytes[i]; var g = bytes[i + 1]; var r = bytes[i + 2];
+            if (color switch { 'r' => r > 180 && g < 80 && b < 80, 'g' => g > 180 && r < 80 && b < 80, 'b' => b > 180 && r < 80 && g < 80, 'y' => r > 180 && g > 180 && b < 80, _ => false }) count++;
+        }
+        return count;
     }
 
     private static async Task PreviewLimits()
@@ -179,6 +240,30 @@ internal static partial class Program
         catch (OperationCanceledException) { }
         Check(!ItemDetailsReader.SupportsPreview(PreviewRow(video) with { IsDirectory = true }), "Folder preview was enabled.");
         Check(!ItemDetailsReader.SupportsPreview(PreviewRow(Path.Combine(fixture.Root, "script.exe"))), "Executable preview was enabled.");
+    }
+
+    private static async Task DocumentLayoutLimits()
+    {
+        using var fixture = new PickerFixture();
+        var reader = new FilePreviewReader();
+        var external = Path.Combine(fixture.Root, "external.docx");
+        WritePreviewPackage(external,
+            ("word/document.xml", "<document xmlns:r='urn:rels'><body><p><r><rPr><color val='FF0000'/><sz val='48'/><rFonts ascii='https://invalid.test/font.ttf#Font'/></rPr><t>Local text</t><drawing><inline><extent cx='952500' cy='952500'/><blip r:embed='remote'/></inline></drawing></r></p></body></document>"),
+            ("word/_rels/document.xml.rels", "<Relationships><Relationship Id='remote' Target='https://invalid.test/image.png' TargetMode='External'/></Relationships>"));
+        var deep = Path.Combine(fixture.Root, "deep.docx");
+        WritePreviewPackage(deep, ("word/document.xml", "<document>" + string.Concat(Enumerable.Repeat("<sdt>", 70)) + "<p><t>deep</t></p>" + string.Concat(Enumerable.Repeat("</sdt>", 70)) + "</document>"));
+        var repeated = Path.Combine(fixture.Root, "repeated.ods");
+        WritePreviewPackage(repeated, ("content.xml", "<document><body><spreadsheet><table><table-row number-rows-repeated='1000000'><table-cell number-columns-repeated='1000000'><p/></table-cell></table-row></table></spreadsheet></body></document>"));
+        var manyPages = Path.Combine(fixture.Root, "pages.docx");
+        WritePreviewPackage(manyPages, ("word/document.xml", "<document><body>" + string.Concat(Enumerable.Range(0, 105).Select(i => $"<p><pPr><pageBreakBefore/></pPr><r><t>Page {i}</t></r></p>")) + "</body></document>"));
+        var before = CapturePickerTree(fixture.Root);
+        var local = await reader.ReadAsync(PreviewRow(external), 0, CancellationToken.None);
+        Check(PreviewColorCount(local, 'r') > 100 && local.Text.Contains("미지원"), "External image/font references interfered with safe local rendering.");
+        Check((await reader.ReadAsync(PreviewRow(deep), 0, CancellationToken.None)).Text.Contains("미리보기 불가"), "Excessively nested document was accepted.");
+        Check((await reader.ReadAsync(PreviewRow(repeated), 0, CancellationToken.None)).Text.Contains("미리보기 불가"), "Repeated cells bypassed the layout budget.");
+        var limited = await reader.ReadAsync(PreviewRow(manyPages), int.MaxValue, CancellationToken.None);
+        Check(limited.HasImage && limited.PageCount == 100 && limited.PageIndex == 99 && limited.Text.Contains("범위 제한"), "Document page limit or clamped navigation was incorrect.");
+        Check(before.SequenceEqual(CapturePickerTree(fixture.Root)), "Document limits or external references changed the source tree.");
     }
 
     private static async Task PreviewSelectionAndPages()

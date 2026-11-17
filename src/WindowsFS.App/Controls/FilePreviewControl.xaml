@@ -4,7 +4,7 @@
              IsVisibleChanged="PreviewVisibilityChanged" Unloaded="PreviewUnloaded">
   <StackPanel DataContext="{Binding Preview, RelativeSource={RelativeSource AncestorType=UserControl}}">
     <Image x:Name="PreviewImage" Source="{Binding Image}" MaxHeight="480" Stretch="Uniform"
-           Visibility="{Binding HasImage, Converter={StaticResource Visible}}" Margin="0,0,0,8" AutomationProperties.Name="이미지·PDF 미리보기" />
+           Visibility="{Binding HasImage, Converter={StaticResource Visible}}" Margin="0,0,0,8" AutomationProperties.Name="이미지·문서 미리보기" />
     <StackPanel Visibility="{Binding HasVideo, Converter={StaticResource Visible}}">
       <Border x:Name="VideoHost" Background="#090A0D" CornerRadius="6" Height="220" />
       <StackPanel Orientation="Horizontal" Margin="0,8,0,8">

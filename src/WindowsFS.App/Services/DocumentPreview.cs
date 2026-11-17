@@ -1,57 +1,71 @@
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
-using System.Text;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using System.Xml;
 using System.Xml.Linq;
 
 namespace WindowsFS.App.Services;
 
-/// <summary>Extracts plain text from allowlisted ZIP/XML parts. Never evaluates formulas, links, or macros.</summary>
-internal sealed class DocumentPreview(ZipArchive archive, CancellationToken token)
+/// <summary>
+/// Bounded, in-memory document renderer. Only explicit XML properties and embedded raster images
+/// become WPF objects; document XAML, external resources, formulas and macros are never loaded.
+/// </summary>
+internal sealed partial class DocumentPreview(ZipArchive archive, CancellationToken token)
 {
     private const int TextLimit = 64 * 1024;
-    private const int PartLimit = 2 * 1024 * 1024;
+    private const int PageLimit = 100;
     private long _expandedBytes;
-    private readonly StringBuilder _text = new();
-    private bool _truncated;
+    private int _characters, _elements, _layoutElements;
+    private long _imagePixels;
+    private bool _limited;
+    private bool _approximate;
+    private readonly Dictionary<string, XDocument> _xml = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, BitmapSource> _images = new(StringComparer.Ordinal);
+    private readonly List<FlowDocument> _documents = [];
+    private readonly List<FrameworkElement> _canvases = [];
 
-    public static string Read(Stream source, string extension, CancellationToken token)
+    public static Task<FilePreview> ReadAsync(Stream source, string extension, int pageIndex, CancellationToken token)
     {
-        using var archive = new ZipArchive(source, ZipArchiveMode.Read, leaveOpen: true);
-        if (archive.Entries.Count > 20_000) throw new InvalidDataException("Too many document parts.");
-        var preview = new DocumentPreview(archive, token);
-        switch (extension.ToLowerInvariant())
+        var completion = new TaskCompletionSource<FilePreview>(TaskCreationOptions.RunContinuationsAsynchronously);
+        // WPF layout needs STA ownership, but never a window, app dispatcher, or an Office process.
+        var thread = new Thread(() =>
         {
-            case ".docx": case ".docm": preview.Paragraphs(preview.Xml("word/document.xml")); break;
-            case ".xlsx": case ".xlsm": preview.Workbook(); break;
-            case ".pptx": case ".pptm": preview.Presentation(); break;
-            case ".hwpx":
-                var sections = archive.Entries.Where(entry => entry.FullName.StartsWith("Contents/section", StringComparison.Ordinal) &&
-                    entry.FullName.EndsWith(".xml", StringComparison.Ordinal)).OrderBy(entry => PartNumber(entry.FullName)).ToArray();
-                if (sections.Length == 0) throw new InvalidDataException("Missing document body.");
-                foreach (var section in sections.Take(20)) { if (preview.Full) break; preview.Paragraphs(preview.Xml(section.FullName)); }
-                preview._truncated |= sections.Length > 20;
-                break;
-            default: preview.OpenDocument(); break;
-        }
-        return preview._text.Length == 0 ? "문서 텍스트 없음" :
-            "[문서 텍스트 · 서식 제외]\n\n" + preview._text + (preview._truncated ? "\n[미리보기 범위 제한]" : "");
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                using var archive = new ZipArchive(source, ZipArchiveMode.Read, leaveOpen: true);
+                if (archive.Entries.Count > 20_000) throw new InvalidDataException("Too many document parts.");
+                var renderer = new DocumentPreview(archive, token);
+                switch (extension.ToLowerInvariant())
+                {
+                    case ".docx": case ".docm": renderer.Word(); break;
+                    case ".xlsx": case ".xlsm": renderer.Workbook(); break;
+                    case ".pptx": case ".pptm": renderer.Presentation(); break;
+                    case ".hwpx": renderer.Hangul(); break;
+                    default: renderer.OpenDocument(extension); break;
+                }
+                completion.TrySetResult(renderer.Render(pageIndex));
+            }
+            catch (OperationCanceledException) { completion.TrySetCanceled(token); }
+            catch (Exception error) { completion.TrySetException(error); }
+            finally { Dispatcher.FromThread(Thread.CurrentThread)?.InvokeShutdown(); }
+        }) { IsBackground = true, Name = "WindowsFS document preview" };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return completion.Task;
     }
 
-    private bool Full => _text.Length >= TextLimit;
-    private void Append(string value)
-    {
-        token.ThrowIfCancellationRequested();
-        var remaining = TextLimit - _text.Length;
-        if (value.Length > remaining) _truncated = true;
-        _text.Append(value.AsSpan(0, Math.Min(value.Length, remaining)));
-    }
-
-    private XDocument Xml(string name)
+    private byte[] Part(string name, int limit)
     {
         token.ThrowIfCancellationRequested();
         var entry = archive.GetEntry(name) ?? throw new InvalidDataException("Missing document part.");
-        if (entry.Length > PartLimit || _expandedBytes + entry.Length > 8L * 1024 * 1024)
+        if (entry.Length > limit || _expandedBytes + entry.Length > 32L * 1024 * 1024)
             throw new InvalidDataException("Expanded document limit exceeded.");
         using var input = entry.Open();
         using var memory = new MemoryStream();
@@ -60,121 +74,182 @@ internal sealed class DocumentPreview(ZipArchive archive, CancellationToken toke
         while ((count = input.Read(buffer, 0, buffer.Length)) != 0)
         {
             token.ThrowIfCancellationRequested();
-            if (memory.Length + count > PartLimit) throw new InvalidDataException("Expanded part limit exceeded.");
-            if ((_expandedBytes += count) > 8L * 1024 * 1024) throw new InvalidDataException("Expanded document limit exceeded.");
+            if (memory.Length + count > limit || (_expandedBytes += count) > 32L * 1024 * 1024)
+                throw new InvalidDataException("Expanded document limit exceeded.");
             memory.Write(buffer, 0, count);
         }
-        memory.Position = 0;
-        using var reader = XmlReader.Create(memory, new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = PartLimit,
-            MaxCharactersFromEntities = 0
-        });
-        return XDocument.Load(reader);
+        return memory.ToArray();
     }
 
-    private void Paragraphs(XDocument document)
+    private XDocument Xml(string name)
     {
-        foreach (var paragraph in document.Descendants().Where(node => node.Name.LocalName == "p"))
+        if (_xml.TryGetValue(name, out var cached)) return cached;
+        using var memory = new MemoryStream(Part(name, 2 * 1024 * 1024));
+        using var reader = XmlReader.Create(memory, new XmlReaderSettings
         {
-            if (Full) { _truncated = true; break; }
-            foreach (var part in paragraph.Descendants())
-            {
-                if (part.Name.LocalName == "t") Append(part.Value);
-                else if (part.Name.LocalName == "tab") Append("\t");
-                else if (part.Name.LocalName is "br" or "lineBreak") Append("\n");
-            }
-            Append("\n");
+            DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null,
+            MaxCharactersInDocument = 2 * 1024 * 1024, MaxCharactersFromEntities = 0
+        });
+        var document = XDocument.Load(reader);
+        // Bound both traversal depth and the number of layout objects before recursive processing.
+        foreach (var node in document.Descendants())
+        {
+            token.ThrowIfCancellationRequested();
+            if (++_elements > 40_000 || node.Ancestors().Take(65).Count() > 64)
+                throw new InvalidDataException("Document complexity limit exceeded.");
         }
+        _xml.Add(name, document);
+        return document;
+    }
+
+    private XDocument? OptionalXml(string name) => archive.GetEntry(name) is null ? null : Xml(name);
+    private static XElement? Child(XContainer? node, string name) => node?.Elements().FirstOrDefault(x => x.Name.LocalName == name);
+    private static IEnumerable<XElement> Children(XContainer? node, string name) => node?.Elements().Where(x => x.Name.LocalName == name) ?? [];
+    private static IEnumerable<XElement> Desc(XContainer? node, string name) => node?.Descendants().Where(x => x.Name.LocalName == name) ?? [];
+    private static string? Attr(XElement? node, string name) => node?.Attributes().FirstOrDefault(x => x.Name.LocalName == name)?.Value;
+    private static double Number(string? text, double fallback = 0) => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && double.IsFinite(n) ? n : fallback;
+    private static int Integer(string? text, int fallback = 0) => int.TryParse(text, out var n) ? n : fallback;
+    private static double Bound(double n, double min = 0, double max = 2000) => Math.Clamp(n, min, max);
+    private static bool Enabled(XElement? node) => node is not null && Attr(node, "val") is not ("0" or "false" or "off" or "none");
+    private static Brush? ColorBrush(string? value)
+    {
+        if (value is null or "auto" or "transparent" or "none") return null;
+        var hex = value.TrimStart('#');
+        if (hex.Length == 8) hex = hex[2..];
+        if (hex.Length != 6 || !uint.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var rgb)) return null;
+        var brush = new SolidColorBrush(Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
+        brush.Freeze();
+        return brush;
     }
 
     private Dictionary<string, string> Relationships(string owner)
     {
         var slash = owner.LastIndexOf('/');
         var directory = owner[..(slash + 1)];
-        var document = Xml(directory + "_rels/" + owner[(slash + 1)..] + ".rels");
+        var document = OptionalXml(directory + "_rels/" + owner[(slash + 1)..] + ".rels");
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var relationship in document.Root?.Elements() ?? [])
+        foreach (var item in document?.Root?.Elements() ?? [])
         {
-            var id = (string?)relationship.Attribute("Id");
-            var target = (string?)relationship.Attribute("Target");
-            if (id is null || target is null || (string?)relationship.Attribute("TargetMode") == "External" || target.Contains(':') || target.Contains('\\')) continue;
-            var parts = new List<string>();
-            foreach (var part in (target.StartsWith('/') ? target[1..] : directory + target).Split('/'))
-            {
-                if (part is "" or ".") continue;
-                if (part == "..") { if (parts.Count == 0) throw new InvalidDataException("Invalid part path."); parts.RemoveAt(parts.Count - 1); }
-                else parts.Add(part);
-            }
-            result[id] = string.Join('/', parts);
+            var id = Attr(item, "Id");
+            var path = PackagePath(directory, Attr(item, "Target"));
+            if (id is not null && path is not null && !string.Equals(Attr(item, "TargetMode"), "External", StringComparison.OrdinalIgnoreCase)) result[id] = path;
         }
         return result;
     }
 
-    private void Workbook()
+    private static string? PackagePath(string directory, string? target)
     {
-        var shared = archive.GetEntry("xl/sharedStrings.xml") is null ? [] : Xml("xl/sharedStrings.xml")
-            .Descendants().Where(node => node.Name.LocalName == "si")
-            .Select(node => string.Concat(node.Descendants().Where(child => child.Name.LocalName == "t").Select(child => child.Value))).ToArray();
-        var relationships = Relationships("xl/workbook.xml");
-        var sheets = Xml("xl/workbook.xml").Descendants().Where(node => node.Name.LocalName == "sheet").ToArray();
-        foreach (var sheet in sheets.Take(10))
+        if (string.IsNullOrEmpty(target) || target.Contains(':') || target.Contains('\\') || target.StartsWith("//")) return null;
+        var parts = new List<string>();
+        foreach (var part in (target.StartsWith('/') ? target[1..] : directory + target).Split('/'))
         {
-            if (Full) break;
-            var id = sheet.Attributes().FirstOrDefault(attribute => attribute.Name.LocalName == "id")?.Value;
-            if (id is null || !relationships.TryGetValue(id, out var path)) continue;
-            Append($"[{(string?)sheet.Attribute("name") ?? "시트"}]\n");
-            var rows = Xml(path).Descendants().Where(node => node.Name.LocalName == "row").ToArray();
-            foreach (var row in rows.Take(200))
+            if (part is "" or ".") continue;
+            if (part == "..") { if (parts.Count == 0) return null; parts.RemoveAt(parts.Count - 1); }
+            else parts.Add(part);
+        }
+        return string.Join('/', parts);
+    }
+
+    private string Text(string value)
+    {
+        token.ThrowIfCancellationRequested();
+        var count = Math.Min(value.Length, TextLimit - _characters);
+        _limited |= count != value.Length;
+        _characters += count;
+        return value[..count];
+    }
+
+    private void LayoutElement()
+    {
+        token.ThrowIfCancellationRequested();
+        if (++_layoutElements > 12_000) throw new InvalidDataException("Document layout limit exceeded.");
+    }
+
+    private Image? Picture(string? path, double width = 0, double height = 0)
+    {
+        if (path is null || archive.GetEntry(path) is null) { _approximate = true; return null; }
+        if (!_images.TryGetValue(path, out var bitmap))
+        {
+            if (_images.Count >= 40) { _limited = true; return null; }
+            // Embedded SVG, EMF, WMF, and other active/vector formats are never handed to shell handlers.
+            if (Path.GetExtension(path).ToLowerInvariant() is not (".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".tif" or ".tiff"))
+            { _approximate = true; return null; }
+            using var stream = new MemoryStream(Part(path, 8 * 1024 * 1024));
+            bitmap = FilePreviewReader.DecodeImage(stream);
+            if ((_imagePixels += (long)bitmap.PixelWidth * bitmap.PixelHeight) > 16_000_000)
+                throw new InvalidDataException("Embedded image pixel limit exceeded.");
+            _images.Add(path, bitmap);
+        }
+        if (width <= 0) width = Math.Min(bitmap.PixelWidth, 600);
+        if (height <= 0) height = width * bitmap.PixelHeight / Math.Max(1, bitmap.PixelWidth);
+        var scale = Math.Min(1, 700 / Math.Max(width, height));
+        return new Image { Source = bitmap, Width = Bound(width * scale, 1), Height = Bound(height * scale, 1), Stretch = Stretch.Fill };
+    }
+
+    private FlowDocument NewDocument(double width = 794, double height = 1123, double margin = 60)
+    {
+        var document = new FlowDocument
+        {
+            PageWidth = Bound(width, 200), PageHeight = Bound(height, 200), PagePadding = new Thickness(margin),
+            ColumnWidth = 2000, FontFamily = new FontFamily("Segoe UI"), FontSize = 14,
+            Foreground = Brushes.Black, Background = Brushes.White, IsHyphenationEnabled = false
+        };
+        _documents.Add(document);
+        return document;
+    }
+
+    private FilePreview Render(int requestedPage)
+    {
+        var pages = new List<(DocumentPaginator Paginator, int Index)>();
+        foreach (var document in _documents)
+        {
+            var paginator = ((IDocumentPaginatorSource)document).DocumentPaginator;
+            if (paginator is DynamicDocumentPaginator dynamic) dynamic.IsBackgroundPaginationEnabled = false;
+            for (var index = 0; ; index++)
             {
-                if (Full) break;
-                var cells = row.Elements().Where(node => node.Name.LocalName == "c").ToArray();
-                foreach (var cell in cells.Take(50))
-                {
-                    var value = cell.Elements().FirstOrDefault(node => node.Name.LocalName == "v")?.Value ?? "";
-                    if ((string?)cell.Attribute("t") == "s") value = int.TryParse(value, out var index) && index >= 0 && index < shared.Length ? shared[index] : "[문자열 없음]";
-                    else if ((string?)cell.Attribute("t") == "inlineStr") value = string.Concat(cell.Descendants().Where(node => node.Name.LocalName == "t").Select(node => node.Value));
-                    // Only cached formula values are displayed; no formula engine or external workbook access.
-                    Append($"{(string?)cell.Attribute("r")}: {value}\t");
-                }
-                _truncated |= cells.Length > 50;
-                Append("\n");
+                token.ThrowIfCancellationRequested();
+                using var page = paginator.GetPage(index);
+                if (page == DocumentPage.Missing) break;
+                if (pages.Count >= PageLimit) { _limited = true; break; }
+                pages.Add((paginator, index));
             }
-            _truncated |= rows.Length > 200;
-            Append("\n");
+            if (_limited && pages.Count >= PageLimit) break;
         }
-        _truncated |= sheets.Length > 10 || Full;
-    }
-
-    private void Presentation()
-    {
-        var relationships = Relationships("ppt/presentation.xml");
-        var slides = Xml("ppt/presentation.xml").Descendants().Where(node => node.Name.LocalName == "sldId").ToArray();
-        var number = 0;
-        foreach (var slide in slides.Take(20))
+        var count = pages.Count + _canvases.Count;
+        if (count == 0) return new FilePreview("문서 내용 없음");
+        var selected = Math.Clamp(requestedPage, 0, count - 1);
+        BitmapSource bitmap;
+        if (selected < pages.Count)
         {
-            if (Full) break;
-            var id = slide.Attributes().FirstOrDefault(attribute => attribute.Name.LocalName == "id" && attribute.Name.NamespaceName.Length > 0)?.Value;
-            if (id is null || !relationships.TryGetValue(id, out var path)) continue;
-            Append($"[슬라이드 {++number}]\n");
-            Paragraphs(Xml(path));
-            Append("\n");
+            var (paginator, index) = pages[selected];
+            using var page = paginator.GetPage(index);
+            bitmap = Raster(page.Visual, page.Size);
         }
-        _truncated |= slides.Length > 20 || Full;
-    }
-
-    private void OpenDocument()
-    {
-        foreach (var paragraph in Xml("content.xml").Descendants().Where(node => node.Name.LocalName is "p" or "h"))
+        else
         {
-            if (Full) { _truncated = true; break; }
-            Append(paragraph.Value + "\n");
+            var canvas = _canvases[selected - pages.Count];
+            var size = new Size(canvas.Width, canvas.Height);
+            canvas.Measure(size); canvas.Arrange(new Rect(size)); canvas.UpdateLayout();
+            bitmap = Raster(canvas, size);
         }
+        var status = _limited ? "미리보기 범위 제한" : "";
+        if (_approximate) status += (status.Length > 0 ? " · " : "") + "일부 개체·서식 미지원";
+        return new FilePreview(status, Image: bitmap, PageIndex: selected, PageCount: count);
     }
 
-    private static int PartNumber(string name)
+    private BitmapSource Raster(Visual visual, Size size)
     {
-        var digits = new string(Path.GetFileNameWithoutExtension(name).Where(char.IsAsciiDigit).ToArray());
-        return int.TryParse(digits, out var number) ? number : int.MaxValue;
+        token.ThrowIfCancellationRequested();
+        var scale = Math.Min(1.5, 1600 / Math.Max(size.Width, size.Height));
+        var drawing = new DrawingVisual();
+        using (var context = drawing.RenderOpen())
+        {
+            context.DrawRectangle(Brushes.White, null, new Rect(size));
+            context.DrawRectangle(new VisualBrush(visual) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(size));
+        }
+        var bitmap = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(size.Width * scale)), Math.Max(1, (int)Math.Ceiling(size.Height * scale)), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+        bitmap.Render(drawing);
+        bitmap.Freeze();
+        return bitmap;
     }
 }

@@ -48,7 +48,7 @@ public sealed class FilePreviewReader : IFilePreviewReader
         PreviewKind.Image => "이미지 · 최대 64 MB · GIF/TIFF 첫 프레임",
         PreviewKind.Video => "영상 · 처음 30초 · 최대 2 GB · Windows 지원 코덱",
         PreviewKind.Pdf => "PDF · 페이지 미리보기 · 최대 64 MB",
-        PreviewKind.Document => "문서 본문·표 텍스트 · 최대 64 MB · 서식·매크로 제외",
+        PreviewKind.Document => "문서 페이지 · 서식·표·이미지 · 최대 64 MB · 복잡한 배치 일부 제한",
         PreviewKind.Text => "텍스트 · 최대 64 KB · UTF-8/BOM",
         _ => "미리보기 미지원 형식"
     };
@@ -88,7 +88,7 @@ public sealed class FilePreviewReader : IFilePreviewReader
                     {
                         PreviewKind.Image => new FilePreview(Image: DecodeImage(memory)),
                         PreviewKind.Pdf => PdfPreview.Read(memory, pageIndex, token),
-                        _ => new FilePreview(DocumentPreview.Read(memory, Path.GetExtension(row.Path), token))
+                        _ => await DocumentPreview.ReadAsync(memory, Path.GetExtension(row.Path), pageIndex, token).ConfigureAwait(false)
                     };
                 }
                 catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException or
@@ -139,7 +139,7 @@ public sealed class FilePreviewReader : IFilePreviewReader
         if (info.Length > maximumBytes) throw new PreviewLimitException($"미리보기 크기 제한 · 최대 {DisplayFormat.Bytes(maximumBytes)}");
     }
 
-    private static BitmapSource DecodeImage(Stream stream)
+    internal static BitmapSource DecodeImage(Stream stream)
     {
         var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.DelayCreation, BitmapCacheOption.OnDemand);
         var frame = decoder.Frames[0];

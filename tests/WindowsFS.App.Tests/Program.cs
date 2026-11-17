@@ -39,7 +39,8 @@ internal static partial class Program
         {
             ("Details and bounded text previews leave synthetic files unchanged", FileDetails),
             ("Image and PDF previews render bounded pages without source changes", ImageAndPdfPreviews),
-            ("Office, HWPX and OpenDocument previews extract ordered plain text without writes", DocumentPreviews),
+            ("Office, HWPX and OpenDocument previews render formatted pages, tables and images without writes", DocumentPreviews),
+            ("Document layout bounds reject expansion and external resources without source writes", DocumentLayoutLimits),
             ("Previews reject malformed, external and oversized content and never autoplay video", PreviewLimits),
             ("Preview selection cancellation, page bounds and actual XAML bindings stay consistent", PreviewSelectionAndPages),
             ("Actual XAML realizes a full-width dashboard and read-only result bindings", XamlSmoke),

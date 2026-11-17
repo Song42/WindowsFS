@@ -127,13 +127,15 @@ scripts/                  로컬 실행 및 배포 스크립트
 | 이미지 | PNG, JPG/JPEG, BMP, GIF, TIFF, ICO. 최대 64 MB·1억 픽셀, 긴 변 1,600픽셀로 축소. GIF/TIFF는 첫 프레임 |
 | 영상 | MP4/M4V, MOV, AVI, WMV, MKV, WebM 중 Windows 미디어 코덱이 지원하는 파일. 최대 2 GB, 처음 30초, 재생·일시정지·처음 버튼. 선택 변경·패널 숨김·종료 시 해제 |
 | PDF | 최대 64 MB, PDFium으로 페이지 표시와 이전·다음 이동. 링크·스크립트 실행 없음 |
-| 문서 | DOCX/DOCM, XLSX/XLSM, PPTX/PPTM, HWPX, ODT/ODS/ODP의 본문·표 텍스트. 원본 서식·그림은 렌더링하지 않음 |
+| 문서 | DOCX/DOCM, XLSX/XLSM, PPTX/PPTM, HWPX, ODT/ODS/ODP를 페이지 이미지로 표시. 글꼴·크기·색상·강조·문단 정렬, 표·셀 배경·병합, 삽입 이미지와 이전·다음 페이지 이동 |
 | 텍스트 | 기존 텍스트·소스 형식의 앞부분 64 KB, UTF-8/BOM. HTML도 텍스트로만 표시 |
 
-문서는 최대 64 MB 파일에서 XML 파트당 2 MB·합계 8 MB 이내로 읽고, 출력은 64 K 문자로 제한합니다. 스프레드시트는 처음 10개 시트·각 200행·50열, 프레젠테이션은 처음 20개 슬라이드, HWPX는 처음 20개 구역을 표시합니다. 수식은 저장된 결과 값만 표시하며 재계산하지 않습니다. 매크로·외부 참조·XML 외부 엔티티는 실행하거나 조회하지 않습니다. 구형 DOC/XLS/PPT/HWP와 암호화 문서는 지원하지 않습니다.
+문서는 최대 64 MB 파일에서 XML 파트당 2 MB·삽입 이미지당 8 MB·압축 해제 합계 32 MB 이내로 읽습니다. 최대 64 K 문자·100페이지, 삽입 이미지 40개·디코딩 합계 1,600만 픽셀, XML 깊이 64·요소 4만 개·레이아웃 요소 1만 2천 개로 제한합니다. Excel은 처음 10개 표시 시트·각 200행·50열을 여러 페이지로 나눕니다. 프레젠테이션은 처음 20개 슬라이드, HWPX는 처음 20개 구역을 표시합니다. 수식은 저장된 결과 값만 표시하며 재계산하지 않습니다. 매크로·외부 참조·XML 외부 엔티티는 실행하거나 조회하지 않습니다. 구형 DOC/XLS/PPT/HWP와 암호화 문서는 지원하지 않습니다.
+
+내장 렌더러가 지원하는 서식을 재현하며 Office·한글과 픽셀 단위로 동일한 출력은 아닙니다. 설치되지 않은 글꼴, 테마·마스터·복잡한 도형·차트·수식 개체, 머리글·바닥글, 떠 있는 개체 배치, 일부 목록·사용자 지정 숫자 서식은 다르게 표시되거나 생략될 수 있습니다. 삽입 이미지는 PNG/JPEG/GIF/BMP/TIFF를 지원하며 SVG/EMF/WMF는 제외합니다. 문서 레이아웃은 별도 STA 스레드에서 계산하고 화면에는 고정된 페이지 이미지만 전달합니다.
 
 미리보기 내용과 렌더링 이미지는 메모리에서만 처리하며 파일로 추출하거나 캐시에 저장·전송하지 않습니다. 링크·네트워크 경로·오프라인 파일은 제외합니다. 지원하지 않는 코덱, 손상·암호화·크기 제한 파일은 상태를 표시합니다. 디스크 할당 크기는 지원하지 않습니다.
 
-PDF 렌더링은 [PDFium의 V8 없는 배포본](https://github.com/bblanchon/pdfium-binaries), 영상 재생은 [WPF MediaElement](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/graphics-multimedia/multimedia-overview)를 사용합니다. 문서 텍스트는 [Open XML 패키지](https://learn.microsoft.com/en-us/office/open-xml/about-the-open-xml-sdk)와 [HWPX 구조](https://tech.hancom.com/hwpxformat/)에서 직접 읽습니다. Office 설치나 셸 미리보기 처리기는 사용하지 않습니다.
+PDF 렌더링은 [PDFium의 V8 없는 배포본](https://github.com/bblanchon/pdfium-binaries), 영상 재생은 [WPF MediaElement](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/graphics-multimedia/multimedia-overview)를 사용합니다. 문서 서식은 [Open XML 패키지](https://learn.microsoft.com/en-us/office/open-xml/about-the-open-xml-sdk), [HWPX 구조](https://tech.hancom.com/hwpxformat/), [OpenDocument 스키마](https://docs.oasis-open.org/office/OpenDocument/v1.3/OpenDocument-v1.3-part3-schema.html)에서 직접 읽어 WPF로 렌더링합니다. Office 설치나 셸 미리보기 처리기는 사용하지 않습니다.
 
 세부정보 패널은 창 폭에 맞춰 늘어나며, 내부 폭이 충분하면 일반 정보와 시스템 설명을 2열로 표시합니다. 좁은 창에서는 1열로 돌아옵니다.
