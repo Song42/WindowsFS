@@ -22,7 +22,7 @@ The user requires WindowsFS to remain a read-only analyzer of user and system fi
 - Keep page titles aligned independently of the dashboard return control. Folder-path navigation must use the saved result index without rescanning or accessing paths outside the analyzed scope.
 - Space composition and details have user-resizable widths, preserved across file/folder selection changes and panel reopening. Reserve usable space for the result list and details when resizing. A system explanation alone must not hide the map; collapse it only when the available layout width is insufficient, and restore the chosen widths when space returns.
 - Main-window controls for all local drives, individual disks, and disk-capacity widgets are deferred until the user decides their UI. Do not add replacement drive widgets by inference. Internal scan targets and read-only folder selection remain available.
-- The existing folder space map may show the containing volume's free space using read-only metadata queries. Label the query time, preserve folder-chart totals, and do not equate a folder's size or scan total with total disk usage.
+- The existing folder space map may show the containing volume's free space using read-only metadata queries. At a drive root, include a separate non-navigable free-space chart item; for subfolders, keep free space in the separate readout and preserve folder-chart totals. Label the query time and root chart basis (saved analyzed bytes plus current free bytes); do not equate scan totals with total disk usage. Keep free space out of generic grouped chart items.
 
 ## Verification and privacy
 

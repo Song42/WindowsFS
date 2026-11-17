@@ -103,6 +103,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool ShowMapFreeSpace => HasResult && IsFolders && _diskSpaceReader is not null;
     public string MapFreeSpaceText { get; private set; } = "";
     public string MapFreeSpaceNote { get; private set; } = "";
+    private bool _mapIncludesFreeSpace;
+    public string MapBasisText => _mapIncludesFreeSpace
+        ? "비율 기준: 분석된 용량 + 조회 시점 여유 공간"
+        : "폴더별 합산 크기 · 0 B 항목은 지도에서 제외";
+    private string? DiskRootMapPath
+    {
+        get
+        {
+            if (!IsFolders || _result is null) return null;
+            var path = _folderPath ?? (_result.Roots.Count == 1 ? _result.Roots[0].Path : null);
+            if (path is null) return null;
+            var normalized = ScanPath.NormalizeRoot(path);
+            return normalized.Length == 3 && char.IsAsciiLetter(normalized[0]) && normalized[1] == ':' && normalized[2] == '\\' ? path : null;
+        }
+    }
     private readonly Dictionary<string, IReadOnlyList<FileRecord>> _folderFiles = new(StringComparer.Ordinal);
     private CancellationTokenSource? _fileListCancellation;
     private Task _fileListTask = Task.CompletedTask;
@@ -891,17 +906,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void RefreshMap()
     {
-        RefreshMapFreeSpace();
-        if (_result is null) { MapItems = []; return; }
-        var scope = _view == "folders" ? ScopeFolders() : _result.Roots.Count == 1 ? _result.Roots[0].Children : _result.Roots;
+        if (_result is null) { MapItems = []; RefreshMapFreeSpace(); return; }
+        var scope = DiskRootMapPath is { } rootPath && _folders.TryGetValue(rootPath, out var root) ? root.Children :
+            _view == "folders" ? ScopeFolders() : _result.Roots.Count == 1 ? _result.Roots[0].Children : _result.Roots;
         var entries = scope.Where(n => n.TotalBytes > 0).OrderByDescending(n => n.TotalBytes).ToList();
         long scopeTotal = _view == "folders" && _folderPath is not null && _folders.TryGetValue(_folderPath, out var selected) ? selected.TotalBytes : _result.TotalBytes;
-        var maps = entries.Take(34).Select(n => new MapItem(n.Name, DisplayFormat.Bytes(n.TotalBytes), n.TotalBytes, n.Path, true)).ToList();
-        var otherFolders = entries.Skip(34).Sum(n => n.TotalBytes);
+        var folderLimit = DiskRootMapPath is null ? 34 : 33;
+        var maps = entries.Take(folderLimit).Select(n => new MapItem(n.Name, DisplayFormat.Bytes(n.TotalBytes), n.TotalBytes, n.Path, true)).ToList();
+        var otherFolders = entries.Skip(folderLimit).Sum(n => n.TotalBytes);
         if (otherFolders > 0) maps.Add(new MapItem("그 외 폴더", DisplayFormat.Bytes(otherFolders), otherFolders, "", false));
         var direct = Math.Max(0, scopeTotal - entries.Sum(n => n.TotalBytes));
         if (direct > 0) maps.Add(new MapItem("직접 포함된 파일", DisplayFormat.Bytes(direct), direct, "", false));
         MapItems = maps;
+        // Start after assigning saved totals: an immediately completed read must not be overwritten.
+        RefreshMapFreeSpace();
     }
 
     public Task WaitForDiskSpaceAsync() => _diskSpaceTask;
@@ -910,6 +928,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _diskSpaceCancellation?.Cancel(); _diskSpaceCancellation?.Dispose(); _diskSpaceCancellation = null;
         _diskSpaceTask = Task.CompletedTask;
         MapFreeSpaceText = ""; MapFreeSpaceNote = "";
+        _mapIncludesFreeSpace = false; Changed(nameof(MapBasisText));
         Changed(nameof(ShowMapFreeSpace));
         if (ShowMapFreeSpace)
         {
@@ -933,6 +952,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
             MapFreeSpaceText = DisplayFormat.Bytes(space.FreeBytes);
             MapFreeSpaceNote = $"{space.ReadAt:HH:mm:ss} 조회 · 해당 폴더의 디스크 기준" +
                 (space.AvailableBytes < space.FreeBytes ? $" · 사용자 사용 가능 {DisplayFormat.Bytes(space.AvailableBytes)}" : "");
+            if (DiskRootMapPath is not null)
+            {
+                _ = checked(MapItems.Sum(item => item.Size) + space.FreeBytes);
+                if (space.FreeBytes > 0)
+                    MapItems = [.. MapItems, new MapItem("여유 공간", DisplayFormat.Bytes(space.FreeBytes), space.FreeBytes, "", false) { IsFreeSpace = true }];
+                _mapIncludesFreeSpace = true; Changed(nameof(MapBasisText));
+            }
         }
         catch (OperationCanceledException)
         {

@@ -254,7 +254,7 @@
                         <TextBlock Text="{Binding MapFreeSpaceNote}" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,4,0,0" TextWrapping="Wrap" />
                       </StackPanel>
                     </Border>
-                    <TextBlock Text="폴더별 합산 크기 · 0 B 항목은 지도에서 제외" Foreground="#768094" FontSize="10" />
+                    <TextBlock Text="{Binding MapBasisText}" Foreground="#768094" FontSize="10" TextWrapping="Wrap" />
                   </StackPanel>
                 </Grid>
               </Border>

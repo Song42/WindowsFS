@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using WindowsFS.App.Controls;
 using WindowsFS.App.Services;
 using WindowsFS.App.ViewModels;
@@ -94,6 +95,94 @@ internal static partial class Program
         Equal(calls, reader.Calls.Count);
         Check(multiple.MapFreeSpaceText.Contains("여러 분석 위치"), "Multiple volumes were incorrectly represented by one drive's free space.");
         vm.Cancel(); multiple.Cancel();
+    }
+
+    private static async Task RootFreeSpaceCharts()
+    {
+        var children = Enumerable.Range(0, 42).Select(index => new FolderNode($@"X:\Folder{index}", 100 + index, 1)).ToArray();
+        var used = children.Sum(folder => folder.TotalBytes) + 50;
+        var root = new FolderNode(@"X:\", used, 43, children);
+        var result = new ScanResult([root], [], [new FileTypeSummary(".bin", used, 43)], used, 43, 43, 1, TimeSpan.Zero, false);
+        var store = new StubStore(new SavedScan(result, root.Path, DateTimeOffset.UtcNow));
+        var reader = new StubDiskSpaceReader { Read = (_, _) => Task.FromResult(new DiskSpace(40, 20, DateTimeOffset.Now)) };
+        var vm = new MainViewModel(new StubScanner((_, _, _) => throw new Exception("Chart updates must not rescan.")), store, diskSpaceReader: reader);
+        await vm.RestoreLastScanAsync(); vm.NavigateCommand.Execute("folders"); await vm.WaitForDiskSpaceAsync();
+        // The single analyzed drive at the top level is also a drive-root chart.
+        var free = vm.MapItems.Single(item => item.IsFreeSpace);
+        Equal(40L, free.Size); Check(!free.IsDirectory && free.Path == "", "Free space became a navigable folder.");
+        Equal(used + 40, vm.MapItems.Sum(item => item.Size));
+        Check(vm.MapItems.Count <= 36 && vm.MapItems.Any(item => item.Label == "직접 포함된 파일"), "Free space displaced direct-file totals.");
+        Check(!vm.MapItems.Any(item => item.Path == root.Path), "The root itself hid its child-folder distribution.");
+        Check(vm.MapBasisText.Contains("분석된 용량 + 조회 시점 여유 공간"), "Root chart implied that saved totals equal physical disk usage.");
+        var map = new SpaceMap { Items = vm.MapItems };
+        MapItem? invoked = null;
+        map.ItemInvoked += (_, item) => invoked = item;
+        foreach (var layout in new[] { SpaceMapLayout.Blocks, SpaceMapLayout.Donut })
+        {
+            map.LayoutMode = layout; RenderMap(map, new Size(340, 440));
+            var items = MapField<MapItem[]>(map, "_items");
+            Check(items[0].IsFreeSpace && items.Count(item => item.IsFreeSpace) == 1, "Small free space was grouped or hidden behind the short legend.");
+            Equal(used + 40, MapField<long>(map, "_totalBytes"));
+            if (layout == SpaceMapLayout.Donut)
+            {
+                var segments = MapField<Geometry[]>(map, "_segments");
+                Check(Math.Abs(segments[0].GetArea() / segments.Sum(segment => segment.GetArea()) - 40d / (used + 40)) < 0.005,
+                    "Free-space donut angle did not match its byte share.");
+                Check(!MapField<Rect[]>(map, "_legendBounds")[0].IsEmpty, "Free-space legend was not visible.");
+            }
+            else
+            {
+                var bounds = MapField<Rect[]>(map, "_bounds");
+                Check(Math.Abs(bounds[0].Width * bounds[0].Height / bounds.Sum(rect => rect.Width * rect.Height) - 40d / (used + 40)) < 0.005,
+                    "Free-space block area did not match its byte share.");
+            }
+            MapSelectAndInvoke(map, 0); Check(invoked is null, "Free-space selection opened a folder.");
+        }
+        var calls = reader.Calls.Count;
+        vm.NavigateMap(free); Equal(calls, reader.Calls.Count);
+        // Also protect the bounded control when callers supply more than its usual 36 items.
+        map.Items = children.Select(folder => new MapItem(folder.Name, "", folder.TotalBytes, folder.Path, true)).Append(free);
+        RenderMap(map, new Size(340, 440));
+        Equal(36, MapField<MapItem[]>(map, "_items").Length);
+        Check(MapField<MapItem[]>(map, "_items").Any(item => ReferenceEquals(item, free)), "Overflow grouping absorbed free space.");
+        Equal(children.Sum(folder => folder.TotalBytes) + 40, MapField<long>(map, "_totalBytes"));
+
+        vm.NavigateMap(new MapItem("Folder0", "", 100, children[0].Path, true)); await vm.WaitForDiskSpaceAsync();
+        Equal(100L, vm.MapItems.Sum(item => item.Size));
+        Check(vm.MapItems.All(item => !item.IsFreeSpace) && vm.MapFreeSpaceText == "40 B", "A subfolder chart included volume free space.");
+        Check(!vm.MapBasisText.Contains("여유 공간"), "A subfolder retained the root percentage basis.");
+        reader.Read = (_, _) => Task.FromResult(new DiskSpace(0, 0, DateTimeOffset.Now));
+        vm.NavigateMap(new MapItem("Root", "", used, root.Path, true)); await vm.WaitForDiskSpaceAsync();
+        Equal(used, vm.MapItems.Sum(item => item.Size)); Equal("0 B", vm.MapFreeSpaceText);
+        Check(vm.MapItems.All(item => !item.IsFreeSpace), "Zero free space produced an invalid chart region.");
+        reader.Read = (_, _) => throw new IOException("Synthetic unavailable disk");
+        vm.NavigateMap(new MapItem("Root", "", used, root.Path, true)); await vm.WaitForDiskSpaceAsync();
+        Check(vm.MapItems.All(item => !item.IsFreeSpace) && vm.MapFreeSpaceText == "확인 불가", "Failed query retained old free space.");
+
+        var ready = new TaskCompletionSource<DiskSpace>(TaskCreationOptions.RunContinuationsAsynchronously);
+        reader.Read = (_, _) => ready.Task;
+        vm.NavigateMap(new MapItem("Root", "", used, root.Path, true));
+        Check(vm.MapItems.All(item => !item.IsFreeSpace), "A loading query reused stale free space.");
+        ready.SetResult(new DiskSpace(70, 70, DateTimeOffset.Now)); await vm.WaitForDiskSpaceAsync();
+        Equal(used + 70, vm.MapItems.Sum(item => item.Size));
+        Equal(1, vm.MapItems.Count(item => item.IsFreeSpace));
+
+        var pending = new TaskCompletionSource<DiskSpace>(TaskCreationOptions.RunContinuationsAsynchronously);
+        reader.Read = (_, _) => pending.Task;
+        vm.NavigateMap(new MapItem("Root", "", used, root.Path, true)); var old = vm.WaitForDiskSpaceAsync();
+        reader.Read = (_, _) => Task.FromResult(new DiskSpace(70, 70, DateTimeOffset.Now));
+        vm.NavigateMap(new MapItem("Folder0", "", 100, children[0].Path, true));
+        await vm.WaitForDiskSpaceAsync(); await old;
+        pending.SetResult(new DiskSpace(999, 999, DateTimeOffset.Now)); DrainDispatcher();
+        Check(vm.MapItems.All(item => !item.IsFreeSpace) && vm.MapFreeSpaceText == "70 B", "Late root data leaked into the subfolder chart.");
+
+        var scoped = result with { Roots = [children[0]], TotalBytes = 100, FileCount = 1, FolderCount = 1 };
+        var scopedVm = new MainViewModel(new StubScanner((_, _, _) => throw new Exception("Unexpected scan.")),
+            new StubStore(new SavedScan(scoped, children[0].Path, DateTimeOffset.UtcNow)), diskSpaceReader: reader);
+        await scopedVm.RestoreLastScanAsync(); scopedVm.NavigateCommand.Execute("folders"); await scopedVm.WaitForDiskSpaceAsync();
+        Check(scopedVm.MapItems.All(item => !item.IsFreeSpace), "An analyzed subfolder was mistaken for a disk root.");
+        Equal(used, root.TotalBytes); Equal(0, store.SaveCalls); Equal(0, store.DeleteCalls);
+        vm.Cancel(); scopedVm.Cancel();
     }
 
     private sealed class StubDiskSpaceReader : IDiskSpaceReader

@@ -67,6 +67,7 @@ internal static partial class Program
             ("Right-side donut legends stay centered and preserve row hit testing", DonutLegendCentering),
             ("Folder maps show current disk free space without changing chart totals or source files", FolderMapFreeSpace),
             ("Disk free-space reads reject stale responses and handle inaccessible and multiple volumes", DiskSpaceFailures),
+            ("Drive-root charts retain free space, preserve bytes and restore subfolder proportions", RootFreeSpaceCharts),
             ("Breadcrumb navigation preserves exact indexed ancestors without scanning", BreadcrumbNavigation),
             ("Actual breadcrumb buttons navigate the saved folder tree", BreadcrumbXaml),
             ("Folder browsing reads metadata without changing the source tree", ReadOnlyFolderBrowsing),

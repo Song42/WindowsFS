@@ -8,7 +8,10 @@ using System.Windows.Media;
 
 namespace WindowsFS.App.Controls;
 
-public sealed record MapItem(string Label, string Detail, long Size, string Path, bool IsDirectory);
+public sealed record MapItem(string Label, string Detail, long Size, string Path, bool IsDirectory)
+{
+    public bool IsFreeSpace { get; init; }
+}
 
 public enum SpaceMapLayout { Blocks, Donut }
 
@@ -33,6 +36,7 @@ public sealed class SpaceMap : FrameworkElement
     private static readonly Brush Ink = FrozenBrush("#172033");
     private static readonly Brush MutedInk = FrozenBrush("#39445A");
     private static readonly Brush EmptyInk = FrozenBrush("#9BA4B5");
+    private static readonly Brush FreeSpaceFill = FrozenBrush("#AAB5C5");
     private static readonly Brush HoverOverlay = FrozenBrush("#20FFFFFF");
     private static readonly Brush LightInk = FrozenBrush("#F0F1F5");
     private static readonly Pen SegmentBorder = FrozenPen("#1A1D25", 1);
@@ -84,7 +88,8 @@ public sealed class SpaceMap : FrameworkElement
     {
         var map = (SpaceMap)sender;
         var ordered = (map.Items ?? []).Where(item => item.Size > 0)
-            .OrderByDescending(item => item.Size).ToArray();
+            // Keep free space identifiable even when tiny folders are grouped or the legend is short.
+            .OrderByDescending(item => item.IsFreeSpace).ThenByDescending(item => item.Size).ToArray();
         // Keep drawing and hit testing bounded without discarding represented bytes.
         if (ordered.Length > 36)
         {
@@ -138,7 +143,7 @@ public sealed class SpaceMap : FrameworkElement
             if (rect.Width < 3 || rect.Height < 3) continue;
             rect.Inflate(-2, -2);
             if (rect.IsEmpty || rect.Width <= 0 || rect.Height <= 0) continue;
-            drawingContext.DrawRoundedRectangle(Palette[index % Palette.Length], null, rect, 6, 6);
+            drawingContext.DrawRoundedRectangle(ItemFill(index), null, rect, 6, 6);
             if (_hovered == index)
                 drawingContext.DrawRoundedRectangle(HoverOverlay, null, rect, 6, 6);
             if (IsKeyboardFocused && _selected == index)
@@ -169,7 +174,7 @@ public sealed class SpaceMap : FrameworkElement
         EnsureDonutLayout();
         for (var index = 0; index < _segments.Length; index++)
         {
-            drawingContext.DrawGeometry(Palette[index % Palette.Length], SegmentBorder, _segments[index]);
+            drawingContext.DrawGeometry(ItemFill(index), SegmentBorder, _segments[index]);
             if (_hovered == index) drawingContext.DrawGeometry(HoverOverlay, null, _segments[index]);
             if (IsKeyboardFocused && _selected == index)
                 drawingContext.DrawGeometry(null, SelectionBorder, _segments[index]);
@@ -195,7 +200,7 @@ public sealed class SpaceMap : FrameworkElement
             var row = _legendBounds[index];
             if (_hovered == index || IsKeyboardFocused && _selected == index)
                 drawingContext.DrawRoundedRectangle(HoverOverlay, null, row, 4, 4);
-            drawingContext.DrawRoundedRectangle(Palette[index % Palette.Length], null,
+            drawingContext.DrawRoundedRectangle(ItemFill(index), null,
                 new Rect(row.Left + 4, row.Top + 7, 8, 8), 2, 2);
             var labelWidth = Math.Max(1, row.Width - 115);
             DrawLine(drawingContext, _items[index].Label, new Rect(row.Left + 20, row.Top + 2, labelWidth, 20),
@@ -291,6 +296,7 @@ public sealed class SpaceMap : FrameworkElement
         drawingContext.DrawText(text, area.TopLeft);
     }
 
+    private Brush ItemFill(int index) => _items[index].IsFreeSpace ? FreeSpaceFill : Palette[index % Palette.Length];
     private string Share(MapItem item) => $"{(double)item.Size / _totalBytes * 100:0.#}%";
 
     private static string FormatBytes(long value)
