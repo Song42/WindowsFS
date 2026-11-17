@@ -186,6 +186,7 @@
                       <Binding Path="IsMapVisible" />
                       <Binding Path="HasDetailPanel" />
                       <Binding ElementName="MainContent" Path="ActualWidth" />
+                      <Binding Path="MapPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
                     </MultiBinding>
                   </ColumnDefinition.Width>
                 </ColumnDefinition>
@@ -205,12 +206,13 @@
                   </ColumnDefinition.Style>
                 </ColumnDefinition>
               </Grid.ColumnDefinitions>
-              <Border x:Name="SpaceMapPanel" Grid.Column="0" Style="{StaticResource Card}" Width="{x:Static controls:SpaceMapVisibilityConverter.MapWidth}" HorizontalAlignment="Left" Padding="16" Margin="0,0,16,0">
+              <Border x:Name="SpaceMapPanel" Grid.Column="0" Style="{StaticResource Card}" Width="{Binding MapPanelWidth, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left" Padding="16" Margin="0,0,16,0">
                 <Border.Visibility>
                   <MultiBinding Converter="{StaticResource SpaceMapVisibility}">
                     <Binding Path="IsMapVisible" />
                     <Binding Path="HasDetailPanel" />
                     <Binding ElementName="MainContent" Path="ActualWidth" />
+                    <Binding Path="MapPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
                   </MultiBinding>
                 </Border.Visibility>
                 <Grid>
@@ -239,6 +241,19 @@
                   <TextBlock Grid.Row="2" Text="폴더별 합산 크기 · 0 B 항목은 지도에서 제외" Foreground="#768094" FontSize="10" Margin="0,13,0,0" />
                 </Grid>
               </Border>
+              <Thumb x:Name="MapResizeHandle" Grid.Column="0" HorizontalAlignment="Right" Width="16" Cursor="SizeWE" Focusable="True" DragDelta="MapResizeDragDelta" KeyDown="MapResizeKeyDown" ToolTip="공간 구성 너비" AutomationProperties.Name="공간 구성 너비 조절" Visibility="{Binding Visibility, ElementName=SpaceMapPanel}">
+                <Thumb.Template>
+                  <ControlTemplate TargetType="Thumb">
+                    <Border Background="Transparent">
+                      <Border x:Name="Grip" Width="2" Height="36" CornerRadius="1" Background="{StaticResource Border}" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Grip" Property="Background" Value="{StaticResource Accent}" /></Trigger>
+                      <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Grip" Property="Background" Value="{StaticResource Accent}" /></Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </Thumb.Template>
+              </Thumb>
               <Border Grid.Column="1" Style="{StaticResource Card}" Padding="0" ClipToBounds="True">
                 <Grid>
                   <Grid.RowDefinitions>
@@ -331,9 +346,8 @@
                   </Grid>
                   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,0,8,0">
-                      <StackPanel x:Name="GeneralSection">
-                        <TextBlock Text="General" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,14" />
-                        <StackPanel Visibility="{Binding HasDetails, Converter={StaticResource Visible}}">
+                      <Expander x:Name="GeneralSection" Header="General" IsExpanded="{Binding GeneralExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
+                        <StackPanel Margin="0,14,0,0" Visibility="{Binding HasDetails, Converter={StaticResource Visible}}">
                           <ItemsControl x:Name="DetailFields" ItemsSource="{Binding Details}">
                             <ItemsControl.ItemsPanel>
                               <ItemsPanelTemplate><controls:ResponsiveDetailsPanel /></ItemsPanelTemplate>
@@ -348,7 +362,7 @@
                             </ItemsControl.ItemTemplate>
                           </ItemsControl>
                         </StackPanel>
-                      </StackPanel>
+                      </Expander>
                       <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0" Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}">
                         <Expander x:Name="SystemInfoSection" Header="Windows 파일 설명" IsExpanded="{Binding SystemInfoExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
                         <StackPanel Margin="0,14,0,0">

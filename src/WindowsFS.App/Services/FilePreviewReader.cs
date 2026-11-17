@@ -50,7 +50,7 @@ public sealed class FilePreviewReader : IFilePreviewReader
     {
         PreviewKind.Image => "이미지 · 최대 64 MB · GIF/TIFF 첫 프레임",
         PreviewKind.Video => "영상 · 최대 2 GB · Windows 지원 코덱",
-        PreviewKind.Audio => "MP3 오디오 · 최대 64 MB",
+        PreviewKind.Audio => "",
         PreviewKind.Pdf => "PDF · 페이지 미리보기 · 최대 64 MB",
         PreviewKind.Document => "문서 페이지 · 서식·표·이미지 · 최대 64 MB · 복잡한 배치 일부 제한",
         PreviewKind.Text => "텍스트 · 최대 64 KB · UTF-8/BOM",

@@ -54,7 +54,7 @@ internal static partial class Program
             ("Maximized chrome fits monitor work areas at every taskbar edge and DPI", MaximizedWorkArea),
             ("Dashboard cards and return navigation retain saved analysis without scanning", DashboardNavigation),
             ("Page headings remain aligned and hide duplicate titles and saved-status footer", RefinedPageHeadings),
-            ("Fixed-width space maps coexist with system details when there is room", ResponsiveSpaceMap),
+            ("Resizable space maps preserve width and reserve room for results and details", ResponsiveSpaceMap),
             ("Breadcrumb navigation preserves exact indexed ancestors without scanning", BreadcrumbNavigation),
             ("Actual breadcrumb buttons navigate the saved folder tree", BreadcrumbXaml),
             ("Folder browsing reads metadata without changing the source tree", ReadOnlyFolderBrowsing),
@@ -363,6 +363,26 @@ internal static partial class Program
             LayoutAt(content, new Size(1100, 760));
             AssertFixedMap();
             Check(!IsEffectivelyVisible(details), "Dismissing the explanation left its sidebar visible.");
+            var handle = (Thumb)window.FindName("MapResizeHandle");
+            handle.RaiseEvent(new DragDeltaEventArgs(120, 0) { RoutedEvent = Thumb.DragDeltaEvent });
+            LayoutAt(content, new Size(1100, 760));
+            Check(Math.Abs(mapPanel.ActualWidth - 480) < 0.5 && Math.Abs(column.ActualWidth - 496) < 0.5,
+                "Dragging the resize handle did not resize the map and its column together.");
+            vm.ShowSystemInfoCommand.Execute(null);
+            LayoutAt(content, new Size(1650, 920));
+            handle.RaiseEvent(new DragDeltaEventArgs(10000, 0) { RoutedEvent = Thumb.DragDeltaEvent });
+            LayoutAt(content, new Size(1650, 920));
+            Check(IsEffectivelyVisible(mapPanel) && ((Grid)window.FindName("ResultColumns")).ColumnDefinitions[1].ActualWidth >= 479.5 && details.ActualWidth >= 325.5,
+                "Resizing beyond available space hid the map or squeezed the other panels.");
+            handle.RaiseEvent(new DragDeltaEventArgs(-10000, 0) { RoutedEvent = Thumb.DragDeltaEvent });
+            LayoutAt(content, new Size(1650, 920));
+            Equal(SpaceMapVisibilityConverter.MinimumMapWidth, mapPanel.ActualWidth);
+            handle.RaiseEvent(new DragDeltaEventArgs(200, 0) { RoutedEvent = Thumb.DragDeltaEvent });
+            LayoutAt(content, new Size(1100, 760));
+            Check(!IsEffectivelyVisible(mapPanel) && !IsEffectivelyVisible(handle), "The resize handle remained when the map was hidden.");
+            LayoutAt(content, new Size(1440, 920));
+            Check(Math.Abs(mapPanel.ActualWidth - 480) < 0.5 && IsEffectivelyVisible(mapPanel), "A narrow window discarded the chosen map width.");
+            Check(ReferenceEquals(originalItems, vm.MapItems), "Dragging the map divider rebuilt the analysis.");
             vm.NavigateCommand.Execute("files");
             LayoutAt(content, new Size(1440, 920));
             Check(column.ActualWidth == 0 && !IsEffectivelyVisible(mapPanel),
@@ -1851,8 +1871,10 @@ internal static partial class Program
             Check(!systemSection.IsExpanded && !previewExpander.IsExpanded && !vm.MediaInfoExpanded,
                 "Optional detail sections must start collapsed.");
             Equal(Visibility.Collapsed, previewSection.Visibility);
-            var general = (StackPanel)window.FindName("GeneralSection");
+            var general = (Expander)window.FindName("GeneralSection");
+            Check(general.IsExpanded && vm.GeneralExpanded, "General must start expanded.");
             Check(!Descendants<Expander>(general).Any(), "Optional sections remain inside General.");
+            general.IsExpanded = false;
             systemSection.IsExpanded = true;
             Render(content);
             var info = vm.SystemInfo!;
@@ -1865,6 +1887,8 @@ internal static partial class Program
             Render(content);
             Equal(Visibility.Visible, panel!.Visibility);
             Equal(Visibility.Visible, previewSection.Visibility);
+            Check(!general.IsExpanded && !vm.GeneralExpanded, "Changing selection reset General's collapsed state.");
+            general.IsExpanded = true;
             Check(systemSection.IsExpanded && vm.SystemInfoExpanded, "Hidden system explanation lost expansion state.");
             Equal(Visibility.Collapsed, ((Border)systemSection.Parent).Visibility);
             previewExpander.IsExpanded = true;
@@ -1872,6 +1896,7 @@ internal static partial class Program
             Render(content);
             Equal(Visibility.Collapsed, previewSection.Visibility);
             Check(vm.PreviewExpanded, "Folder selection reset preview expansion.");
+            Check(general.IsExpanded && vm.GeneralExpanded, "Folder selection reset General's expanded state.");
             vm.SelectedRow = vm.Rows.Single(row => row.Path == @"X:\pagefile.sys");
             Render(content);
             Check(systemSection.IsExpanded && vm.SystemInfoExpanded, "System explanation did not reopen in its preserved state.");

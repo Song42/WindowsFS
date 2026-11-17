@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -15,6 +16,13 @@ public partial class MainWindow : Window
     private bool _closeAfterPersistence;
     private bool _waitingForPersistence;
     private HwndSource? _windowSource;
+    public static readonly DependencyProperty MapPanelWidthProperty = DependencyProperty.Register(
+        nameof(MapPanelWidth), typeof(double), typeof(MainWindow), new PropertyMetadata(SpaceMapVisibilityConverter.MapWidth));
+    public double MapPanelWidth
+    {
+        get => (double)GetValue(MapPanelWidthProperty);
+        private set => SetValue(MapPanelWidthProperty, value);
+    }
     public MainWindow()
     {
         InitializeComponent();
@@ -74,6 +82,22 @@ public partial class MainWindow : Window
         if (e.ExtentWidthChange != 0 && sender is ScrollViewer scroll) scroll.ScrollToRightEnd();
     }
     private void MapItemInvoked(object? sender, MapItem e) => _viewModel.NavigateMap(e);
+    private void MapResizeDragDelta(object sender, DragDeltaEventArgs e) => ResizeMap(e.HorizontalChange);
+    private void MapResizeKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Left or Key.Right)) return;
+        ResizeMap(e.Key == Key.Left ? -10 : 10);
+        e.Handled = true;
+    }
+    private void ResizeMap(double change)
+    {
+        if (!double.IsFinite(change) || SpaceMapPanel.Visibility != Visibility.Visible) return;
+        var reserved = SpaceMapVisibilityConverter.MinimumListWidth + 16 +
+            (DataContext is MainViewModel { HasDetailPanel: true } ? SpaceMapVisibilityConverter.SystemPanelColumnWidth : 0);
+        var maximum = Math.Max(SpaceMapVisibilityConverter.MinimumMapWidth,
+            Math.Min(SpaceMapVisibilityConverter.MaximumMapWidth, MainContent.ActualWidth - reserved));
+        MapPanelWidth = Math.Clamp(MapPanelWidth + change, SpaceMapVisibilityConverter.MinimumMapWidth, maximum);
+    }
     private void ResultsSorting(object sender, DataGridSortingEventArgs e)
     {
         if (sender is not DataGrid grid || DataContext is not MainViewModel { IsFolders: true }) return;

@@ -115,6 +115,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private Task _mediaInfoTask = Task.CompletedTask;
     private bool _mediaInfoExpanded, _mediaInfoLoaded;
     private bool _previewExpanded, _systemInfoExpanded;
+    private bool _generalExpanded = true;
+    public bool GeneralExpanded
+    {
+        get => _generalExpanded;
+        set { if (_generalExpanded == value) return; _generalExpanded = value; Changed(); }
+    }
     public bool PreviewExpanded
     {
         get => _previewExpanded;
