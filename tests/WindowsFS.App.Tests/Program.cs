@@ -37,6 +37,9 @@ internal static partial class Program
         };
         var tests = new (string Name, Func<Task> Run)[]
         {
+            ("Cleanup groups every saved small file without double counts or unsafe cache guesses", CleanupSavedGrouping),
+            ("Cleanup dashboard navigation and read-only grouping reuse saved analysis", CleanupNavigation),
+            ("Cleanup cancellation rejects stale inventories after analysis changes", CleanupCancellation),
             ("MediaInfo reads native audio and video tracks without source changes", NativeMediaInfo),
             ("MediaInfo rejects external references and observes cancellation", MediaInfoBoundaries),
             ("MediaInfo preserves section state, reads once and rejects stale selection results", MediaInfoSelection),

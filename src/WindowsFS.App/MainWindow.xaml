@@ -76,7 +76,7 @@
           </Grid>
         </Border>
         <StackPanel x:Name="DashboardNavigation" Grid.Row="2" Visibility="{Binding IsOverview, Converter={StaticResource Visible}}">
-          <UniformGrid x:Name="DashboardCards" Columns="3" Height="74" Margin="0,0,0,8">
+          <UniformGrid x:Name="DashboardCards" Columns="4" Height="74" Margin="0,0,0,8">
             <Button x:Name="DashboardFilesButton" Command="{Binding NavigateCommand}" CommandParameter="files" Style="{StaticResource DashboardLink}" Margin="0,0,12,0" AutomationProperties.Name="가장 큰 파일">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -104,7 +104,7 @@
                 </StackPanel>
               </Grid>
             </Button>
-            <Button x:Name="DashboardTypesButton" Command="{Binding NavigateCommand}" CommandParameter="types" Style="{StaticResource DashboardLink}" AutomationProperties.Name="파일 형식">
+            <Button x:Name="DashboardTypesButton" Command="{Binding NavigateCommand}" CommandParameter="types" Style="{StaticResource DashboardLink}" Margin="0,0,12,0" AutomationProperties.Name="파일 형식">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20" Foreground="#70BEB1" Margin="0,0,14,0" VerticalAlignment="Center" />
@@ -117,6 +117,12 @@
                   <TextBlock Text="{Binding FileTypeCount}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
               </Grid>
+            </Button>
+            <Button x:Name="DashboardCleanupButton" Command="{Binding NavigateCommand}" CommandParameter="cleanup" Style="{StaticResource DashboardLink}" AutomationProperties.Name="정리 분석">
+              <StackPanel>
+                <TextBlock Text="정리 분석 →" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
+                <TextBlock Text="앱·용도별 묶음" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
+              </StackPanel>
             </Button>
           </UniformGrid>
           <Grid x:Name="DashboardStatistics" Height="26" Margin="2,0,2,8">
@@ -140,7 +146,7 @@
           </Grid>
         </StackPanel>
         <Grid x:Name="AnalysisResults" Grid.Row="3">
-          <Grid Visibility="{Binding HasResult, Converter={StaticResource Visible}}">
+          <Grid Visibility="{Binding ShowStandardResults, Converter={StaticResource Visible}}">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
               <RowDefinition Height="*" />
@@ -439,6 +445,18 @@
               </Border>
             </Grid>
           </Grid>
+          <ContentControl x:Name="CleanupAnalysis" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Visibility="{Binding ShowCleanupResults, Converter={StaticResource Visible}}">
+            <ContentControl.Style>
+              <Style TargetType="ContentControl">
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding ShowCleanupResults}" Value="True">
+                    <Setter Property="Content" Value="{Binding Cleanup}" />
+                    <Setter Property="ContentTemplate"><Setter.Value><DataTemplate><controls:CleanupAnalysisView /></DataTemplate></Setter.Value></Setter>
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </ContentControl.Style>
+          </ContentControl>
           <Border Style="{StaticResource Card}" Visibility="{Binding ShowEmpty, Converter={StaticResource Visible}}" Background="#171A22">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
               <TextBlock Text="분석 결과 없음" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />

@@ -12,6 +12,7 @@ The user requires WindowsFS to remain a read-only analyzer of user and system fi
 - Runtime filesystem writes are limited to the app-owned analysis cache: `%LOCALAPPDATA%\WindowsFS\Cache\latest.scan.json.gz`, its containing directory, and uniquely named temporary files used for atomic cache replacement.
 - Deleting a saved analysis removes only the configured cache file and in-memory results. Never derive a write/delete target from a scan result, selected row, selected scan root, search text, or snapshot contents. Never recursively delete a cache directory.
 - Explorer integration may only reveal a selected path. Clipboard integration may only copy the path text. Official help links may only open documentation; do not execute cleanup commands.
+- Cleanup analysis is explanation and read-only browsing only. Group saved folder metadata without rescanning; installed-app registry metadata may be read without write access. Never execute uninstall strings, cleanup tools, scripts, or automatic removal actions. A cleanup candidate is not a guarantee of safe deletion; preserve explicit evidence and unknown classifications.
 
 ## Navigation
 

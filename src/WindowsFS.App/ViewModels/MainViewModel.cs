@@ -62,6 +62,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly IDiskScanner _scanner;
     private readonly IScanResultStore? _store;
     private readonly SystemItemCatalog _systemCatalog;
+    public CleanupViewModel Cleanup { get; }
     private Task? _pendingSave;
     private Task? _pendingDeletion;
     private CancellationTokenSource? _scanCancellation;
@@ -160,13 +161,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public MainViewModel() : this(new DiskScanner(), new FileScanResultStore(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "WindowsFS", "Cache", "latest.scan.json.gz")), detailsReader: new ItemDetailsReader(), fileBrowser: new ReadOnlyFileBrowser()) { }
+        "WindowsFS", "Cache", "latest.scan.json.gz")), detailsReader: new ItemDetailsReader(), fileBrowser: new ReadOnlyFileBrowser(), cleanupReader: new InstalledAppsReader()) { }
 
     // Injected scanners use an explicit store so tests and alternative hosts never write a user's cache implicitly.
     public MainViewModel(IDiskScanner scanner, IScanResultStore? store = null, SystemItemCatalog? systemCatalog = null, ItemDetailsReader? detailsReader = null,
-        IReadOnlyFileBrowser? fileBrowser = null, IFilePreviewReader? previewReader = null, IMediaInfoReader? mediaInfoReader = null)
+        IReadOnlyFileBrowser? fileBrowser = null, IFilePreviewReader? previewReader = null, IMediaInfoReader? mediaInfoReader = null, ICleanupContextReader? cleanupReader = null)
     {
         _scanner = scanner;
+        Cleanup = new CleanupViewModel(cleanupReader, path => NavigateMap(new MapItem("", "", 0, path, true)));
         _detailsReader = detailsReader;
         _fileBrowser = fileBrowser;
         _previewReader = previewReader ?? new FilePreviewReader();
@@ -242,6 +244,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsFiles => _view == "files";
     public bool IsFolders => _view == "folders";
     public bool IsTypes => _view == "types";
+    public bool IsCleanup => _view == "cleanup";
+    public bool ShowStandardResults => HasResult && !IsCleanup;
+    public bool ShowCleanupResults => HasResult && IsCleanup;
     public bool IsAllDrivesSelected => _selectedPath is null;
     public string ResultScope => $"현재 결과 · {_resultScope}";
     public string ScanLabel => _result is null ? "분석 시작" : "새로 분석";
@@ -262,10 +267,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string Speed => _elapsed.TotalSeconds > 0 ? $"{_files / _elapsed.TotalSeconds:N0} 파일/초" : "분석 대기";
     public string Skipped => _skipped.ToString("N0");
     public string ScanState => IsDeleting ? "삭제 중" : IsRestoring ? "불러오는 중" : IsSaving ? "저장 중" : IsBusy ? "분석 중" : _result is null ? "준비됨" : _result.IsCancelled ? "부분 결과" : _isRestored ? "저장된 분석" : "분석 완료";
-    public string PageTitle => _view switch { "files" => "가장 큰 파일", "folders" => "폴더 탐색", "types" => "파일 형식", _ => "대시보드" };
-    public string PageDescription => _view switch { "files" => "", "folders" => "폴더별 용량 · 두 번 클릭: 하위 폴더 열기", "types" => "확장자별 용량 합계", _ => "파일·폴더별 용량 분포" };
+    public string PageTitle => _view switch { "files" => "가장 큰 파일", "folders" => "폴더 탐색", "types" => "파일 형식", "cleanup" => "정리 분석", _ => "대시보드" };
+    public string PageDescription => _view switch { "files" => "", "folders" => "폴더별 용량 · 두 번 클릭: 하위 폴더 열기", "types" => "확장자별 용량 합계", "cleanup" => "앱·용도별 대상 크기 · 정리 영향·판단 근거", _ => "파일·폴더별 용량 분포" };
     public bool ShowPageDescription => PageDescription.Length > 0;
-    public bool ShowScanControls => !IsFiles;
+    public bool ShowScanControls => !IsFiles && !IsCleanup;
     public string TableTitle => _view switch { "folders" => "폴더 및 파일", "types" => "형식별 사용량", _ => "가장 큰 파일" };
     public bool ShowTableTitle => _view != "files";
     public string TableHint => _view == "folders" ? "선택: 시스템 항목 설명 · 두 번 클릭: 폴더 열기" : _view == "types" ? "확장자 없는 파일 포함" : "";
@@ -455,7 +460,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    public void Cancel() { _scanCancellation?.Cancel(); _fileListCancellation?.Cancel(); _detailsCancellation?.Cancel(); }
+    public void Cancel() { _scanCancellation?.Cancel(); _fileListCancellation?.Cancel(); _detailsCancellation?.Cancel(); Cleanup.Cancel(); }
 
     public Task WaitForPendingSaveAsync() => _pendingSave ?? Task.CompletedTask;
 
@@ -478,6 +483,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             await _store!.DeleteAsync();
             HasSavedAnalysis = false;
             _result = null;
+            Cleanup.Reset();
             _folderFiles.Clear();
             _folders.Clear(); _parents.Clear(); _folderPath = null;
             _resultScope = "";
@@ -523,6 +529,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         // Indexing a saved tree does not touch any scanned paths or read their current metadata.
         var index = await Task.Run(() => IndexFolders(result.Roots));
         _result = result;
+        Cleanup.Reset();
         _folderFiles.Clear();
         _folders = index.Folders; _parents = index.Parents;
         _folderPath = null;
@@ -533,7 +540,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void NotifyResult()
     {
         NotifyStatistics();
-        foreach (var name in new[] { nameof(HasResult), nameof(ShowEmpty), nameof(NoRows), nameof(ScanLabel), nameof(ResultScope), nameof(SnapshotDescription) }) Changed(name);
+        foreach (var name in new[] { nameof(HasResult), nameof(ShowEmpty), nameof(NoRows), nameof(ScanLabel), nameof(ResultScope), nameof(SnapshotDescription), nameof(ShowStandardResults), nameof(ShowCleanupResults) }) Changed(name);
     }
 
     public void NavigateMap(MapItem item)
@@ -582,6 +589,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         RefreshBreadcrumbs();
         foreach (var name in new[] { nameof(PageTitle), nameof(PageDescription), nameof(ShowPageDescription), nameof(ShowScanControls), nameof(TableTitle), nameof(ShowTableTitle), nameof(TableHint), nameof(ShowTableHint), nameof(ShowMap), nameof(ShowFolderNavigation), nameof(Breadcrumb), nameof(MapTitle), nameof(IsOverview), nameof(IsDetailView), nameof(IsFiles), nameof(IsFolders), nameof(IsTypes) }) Changed(name);
         RefreshRows(); RefreshMap();
+        Changed(nameof(IsCleanup)); Changed(nameof(ShowStandardResults)); Changed(nameof(ShowCleanupResults));
+        if (IsCleanup && _result is not null) Cleanup.Load(_result);
         _fileListTask = LoadFolderFilesAsync();
         Changed(nameof(IsMapVisible));
         CommandManager.InvalidateRequerySuggested();
@@ -822,6 +831,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (_result is null) { Rows = []; return; }
         IEnumerable<ResultRow> rows = _view switch
         {
+            "cleanup" => [],
             "folders" => ScopeFolders().Select(n => new ResultRow(n.Name, n.Path, n.TotalBytes, n.FileCount, true, "폴더", Share(n.TotalBytes)))
                 .Concat(_folderPath is not null && _folderFiles.TryGetValue(_folderPath, out var files)
                     ? files.Select(f => new ResultRow(f.Name, f.Path, f.Size, -1, false,
