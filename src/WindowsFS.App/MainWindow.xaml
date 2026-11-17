@@ -322,7 +322,6 @@
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
                   </Grid.RowDefinitions>
                   <Grid Margin="0,0,0,15">
                     <StackPanel>
@@ -332,54 +331,62 @@
                   </Grid>
                   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,0,8,0">
-                      <StackPanel Visibility="{Binding HasDetails, Converter={StaticResource Visible}}">
-                        <ItemsControl x:Name="DetailFields" ItemsSource="{Binding Details}">
-                          <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><controls:ResponsiveDetailsPanel /></ItemsPanelTemplate>
-                          </ItemsControl.ItemsPanel>
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                              <StackPanel Margin="0,0,0,13">
-                                <TextBlock Text="{Binding Label}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,0,0,4" />
-                                <TextBlock Text="{Binding Value}" TextWrapping="Wrap" FontSize="12" />
-                              </StackPanel>
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <controls:FilePreviewControl x:Name="ItemPreview" Preview="{Binding Preview}" Margin="0,0,0,8" />
-                        <StackPanel x:Name="PreviewPageNavigation" Orientation="Horizontal" HorizontalAlignment="Center" Visibility="{Binding HasPreviewPages, Converter={StaticResource Visible}}" Margin="0,0,0,18">
-                          <Button Content="이전 페이지" Command="{Binding PreviousPreviewPageCommand}" Padding="8,6" />
-                          <TextBlock Text="{Binding PreviewPageLabel}" VerticalAlignment="Center" Margin="10,0" />
-                          <Button Content="다음 페이지" Command="{Binding NextPreviewPageCommand}" Padding="8,6" />
+                      <StackPanel x:Name="GeneralSection">
+                        <TextBlock Text="General" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,14" />
+                        <StackPanel Visibility="{Binding HasDetails, Converter={StaticResource Visible}}">
+                          <ItemsControl x:Name="DetailFields" ItemsSource="{Binding Details}">
+                            <ItemsControl.ItemsPanel>
+                              <ItemsPanelTemplate><controls:ResponsiveDetailsPanel /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate>
+                                <StackPanel Margin="0,0,0,13">
+                                  <TextBlock Text="{Binding Label}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,0,0,4" />
+                                  <TextBlock Text="{Binding Value}" TextWrapping="Wrap" FontSize="12" />
+                                </StackPanel>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </StackPanel>
+                        <StackPanel Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}">
+                        <TextBlock Text="{Binding SystemInfo.Title}" TextWrapping="Wrap" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
+                        <controls:ResponsiveDetailsPanel>
+                        <StackPanel>
+                        <TextBlock Text="용도" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,18,0,5" />
+                        <TextBlock Text="{Binding SystemInfo.Purpose}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
+                        </StackPanel>
+                        <StackPanel>
+                        <TextBlock Text="관리 주체" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
+                        <TextBlock Text="{Binding SystemInfo.ManagedBy}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
+                        </StackPanel>
+                        <StackPanel>
+                        <TextBlock Text="필요성" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
+                        <TextBlock Text="{Binding SystemInfo.Necessity}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
+                        </StackPanel>
+                        <StackPanel>
+                        <TextBlock Text="정리 방법" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
+                        <TextBlock Text="{Binding SystemInfo.CleanupAdvice}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
+                        </StackPanel>
+                        </controls:ResponsiveDetailsPanel>
+                        <Border Background="#252333" CornerRadius="7" Padding="10" Margin="0,18,0,0">
+                          <TextBlock Text="{Binding SystemInfo.MatchBasis}" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="10" LineHeight="17" />
+                        </Border>
+                        <Button Content="Microsoft 문서 ↗" Command="{Binding OpenSystemHelpCommand}" Margin="0,15,0,0" Padding="12,9" FontSize="11" />
                         </StackPanel>
                       </StackPanel>
-                      <StackPanel Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}">
-                      <TextBlock Text="{Binding SystemInfo.Title}" TextWrapping="Wrap" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
-                      <controls:ResponsiveDetailsPanel>
-                      <StackPanel>
-                      <TextBlock Text="용도" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,18,0,5" />
-                      <TextBlock Text="{Binding SystemInfo.Purpose}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
-                      </StackPanel>
-                      <StackPanel>
-                      <TextBlock Text="관리 주체" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
-                      <TextBlock Text="{Binding SystemInfo.ManagedBy}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
-                      </StackPanel>
-                      <StackPanel>
-                      <TextBlock Text="필요성" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
-                      <TextBlock Text="{Binding SystemInfo.Necessity}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
-                      </StackPanel>
-                      <StackPanel>
-                      <TextBlock Text="정리 방법" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,17,0,5" />
-                      <TextBlock Text="{Binding SystemInfo.CleanupAdvice}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
-                      </StackPanel>
-                      </controls:ResponsiveDetailsPanel>
-                      <Border Background="#252333" CornerRadius="7" Padding="10" Margin="0,18,0,0">
-                        <TextBlock Text="{Binding SystemInfo.MatchBasis}" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="10" LineHeight="17" />
+                      <Border x:Name="PreviewSection" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0" Visibility="{Binding HasDetails, Converter={StaticResource Visible}}">
+                        <StackPanel>
+                          <TextBlock Text="미리보기" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,14" />
+                          <controls:FilePreviewControl x:Name="ItemPreview" Preview="{Binding Preview}" Margin="0,0,0,8" />
+                          <StackPanel x:Name="PreviewPageNavigation" Orientation="Horizontal" HorizontalAlignment="Center" Visibility="{Binding HasPreviewPages, Converter={StaticResource Visible}}">
+                            <Button Content="이전 페이지" Command="{Binding PreviousPreviewPageCommand}" Padding="8,6" />
+                            <TextBlock Text="{Binding PreviewPageLabel}" VerticalAlignment="Center" Margin="10,0" />
+                            <Button Content="다음 페이지" Command="{Binding NextPreviewPageCommand}" Padding="8,6" />
+                          </StackPanel>
+                        </StackPanel>
                       </Border>
-                      </StackPanel>
                     </StackPanel>
                   </ScrollViewer>
-                  <Button Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}" Grid.Row="2" Content="Microsoft 문서 ↗" Command="{Binding OpenSystemHelpCommand}" Margin="0,15,0,0" Padding="12,9" FontSize="11" />
                 </Grid>
               </Border>
             </Grid>
