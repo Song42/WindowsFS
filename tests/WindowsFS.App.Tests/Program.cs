@@ -65,6 +65,8 @@ internal static partial class Program
             ("Resizable space maps preserve width and reserve room for results and details", ResponsiveSpaceMap),
             ("Details resizing preserves width across selections without layout or scrollbar flicker", DetailsPanelResizing),
             ("Right-side donut legends stay centered and preserve row hit testing", DonutLegendCentering),
+            ("Folder maps show current disk free space without changing chart totals or source files", FolderMapFreeSpace),
+            ("Disk free-space reads reject stale responses and handle inaccessible and multiple volumes", DiskSpaceFailures),
             ("Breadcrumb navigation preserves exact indexed ancestors without scanning", BreadcrumbNavigation),
             ("Actual breadcrumb buttons navigate the saved folder tree", BreadcrumbXaml),
             ("Folder browsing reads metadata without changing the source tree", ReadOnlyFolderBrowsing),

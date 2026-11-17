@@ -246,7 +246,16 @@
                     <TextBlock Text="{Binding MapHint}" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,6,0,0" />
                   </StackPanel>
                   <controls:SpaceMap Grid.Row="1" Items="{Binding MapItems}" LayoutMode="{Binding MapLayout}" ItemInvoked="MapItemInvoked" MinHeight="80" />
-                  <TextBlock Grid.Row="2" Text="폴더별 합산 크기 · 0 B 항목은 지도에서 제외" Foreground="#768094" FontSize="10" Margin="0,13,0,0" />
+                  <StackPanel Grid.Row="2" Margin="0,13,0,0">
+                    <Border x:Name="MapFreeSpace" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,10,0,10" Visibility="{Binding ShowMapFreeSpace, Converter={StaticResource Visible}}">
+                      <StackPanel>
+                        <TextBlock Text="디스크 여유 공간" Foreground="{StaticResource Muted}" FontSize="11" />
+                        <TextBlock Text="{Binding MapFreeSpaceText}" Foreground="{StaticResource Accent}" FontSize="16" FontWeight="SemiBold" Margin="0,4,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding MapFreeSpaceNote}" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,4,0,0" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </Border>
+                    <TextBlock Text="폴더별 합산 크기 · 0 B 항목은 지도에서 제외" Foreground="#768094" FontSize="10" />
+                  </StackPanel>
                 </Grid>
               </Border>
               <Thumb x:Name="MapResizeHandle" Grid.Column="0" HorizontalAlignment="Right" Width="16" Cursor="SizeWE" Focusable="True" DragStarted="PanelResizeStarted" DragCompleted="PanelResizeCompleted" DragDelta="MapResizeDragDelta" KeyDown="MapResizeKeyDown" ToolTip="공간 구성 너비" AutomationProperties.Name="공간 구성 너비 조절" Visibility="{Binding Visibility, ElementName=SpaceMapPanel}">

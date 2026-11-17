@@ -97,6 +97,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private ResultRow? _currentFolderRow;
     private ResultRow? _parentFolderRow;
     private readonly IReadOnlyFileBrowser? _fileBrowser;
+    private readonly IDiskSpaceReader? _diskSpaceReader;
+    private CancellationTokenSource? _diskSpaceCancellation;
+    private Task _diskSpaceTask = Task.CompletedTask;
+    public bool ShowMapFreeSpace => HasResult && IsFolders && _diskSpaceReader is not null;
+    public string MapFreeSpaceText { get; private set; } = "";
+    public string MapFreeSpaceNote { get; private set; } = "";
     private readonly Dictionary<string, IReadOnlyList<FileRecord>> _folderFiles = new(StringComparer.Ordinal);
     private CancellationTokenSource? _fileListCancellation;
     private Task _fileListTask = Task.CompletedTask;
@@ -163,11 +169,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public MainViewModel() : this(new DiskScanner(), new FileScanResultStore(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "WindowsFS", "Cache", "latest.scan.json.gz")), detailsReader: new ItemDetailsReader(), fileBrowser: new ReadOnlyFileBrowser(), cleanupReader: new InstalledAppsReader()) { }
+        "WindowsFS", "Cache", "latest.scan.json.gz")), detailsReader: new ItemDetailsReader(), fileBrowser: new ReadOnlyFileBrowser(), cleanupReader: new InstalledAppsReader(), diskSpaceReader: new DiskSpaceReader()) { }
 
     // Injected scanners use an explicit store so tests and alternative hosts never write a user's cache implicitly.
     public MainViewModel(IDiskScanner scanner, IScanResultStore? store = null, SystemItemCatalog? systemCatalog = null, ItemDetailsReader? detailsReader = null,
-        IReadOnlyFileBrowser? fileBrowser = null, IFilePreviewReader? previewReader = null, IMediaInfoReader? mediaInfoReader = null, ICleanupContextReader? cleanupReader = null)
+        IReadOnlyFileBrowser? fileBrowser = null, IFilePreviewReader? previewReader = null, IMediaInfoReader? mediaInfoReader = null, ICleanupContextReader? cleanupReader = null, IDiskSpaceReader? diskSpaceReader = null)
     {
         _scanner = scanner;
         Cleanup = new CleanupViewModel(cleanupReader, path => NavigateMap(new MapItem("", "", 0, path, true)),
@@ -175,6 +181,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Cleanup.FileSelectionChanged += SelectCleanupFile;
         _detailsReader = detailsReader;
         _fileBrowser = fileBrowser;
+        _diskSpaceReader = diskSpaceReader;
         _previewReader = previewReader ?? new FilePreviewReader();
         _mediaInfoReader = mediaInfoReader ?? new MediaInfoReader();
         PreviousPreviewPageCommand = new RelayCommand(_ => _previewTask = LoadPreviewAsync(Preview.PageIndex - 1),
@@ -404,7 +411,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _currentFolderRow = null;
         SelectedRow = null;
         RefreshBreadcrumbs(); Changed(nameof(Breadcrumb));
-        Rows = []; MapItems = [];
+        Rows = []; MapItems = []; RefreshMapFreeSpace();
         _bytes = _files = _folderCount = _skipped = 0; _elapsed = TimeSpan.Zero;
         Status = "분석 중";
         CurrentPath = TargetLabel;
@@ -464,7 +471,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    public void Cancel() { _scanCancellation?.Cancel(); _fileListCancellation?.Cancel(); _detailsCancellation?.Cancel(); Cleanup.Cancel(); }
+    public void Cancel() { _scanCancellation?.Cancel(); _fileListCancellation?.Cancel(); _detailsCancellation?.Cancel(); _diskSpaceCancellation?.Cancel(); Cleanup.Cancel(); }
 
     public Task WaitForPendingSaveAsync() => _pendingSave ?? Task.CompletedTask;
 
@@ -884,6 +891,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void RefreshMap()
     {
+        RefreshMapFreeSpace();
         if (_result is null) { MapItems = []; return; }
         var scope = _view == "folders" ? ScopeFolders() : _result.Roots.Count == 1 ? _result.Roots[0].Children : _result.Roots;
         var entries = scope.Where(n => n.TotalBytes > 0).OrderByDescending(n => n.TotalBytes).ToList();
@@ -894,6 +902,50 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var direct = Math.Max(0, scopeTotal - entries.Sum(n => n.TotalBytes));
         if (direct > 0) maps.Add(new MapItem("직접 포함된 파일", DisplayFormat.Bytes(direct), direct, "", false));
         MapItems = maps;
+    }
+
+    public Task WaitForDiskSpaceAsync() => _diskSpaceTask;
+    private void RefreshMapFreeSpace()
+    {
+        _diskSpaceCancellation?.Cancel(); _diskSpaceCancellation?.Dispose(); _diskSpaceCancellation = null;
+        _diskSpaceTask = Task.CompletedTask;
+        MapFreeSpaceText = ""; MapFreeSpaceNote = "";
+        Changed(nameof(ShowMapFreeSpace));
+        if (ShowMapFreeSpace)
+        {
+            var path = _folderPath ?? (_result!.Roots.Count == 1 ? _result.Roots[0].Path : null);
+            if (path is null) MapFreeSpaceText = "여러 분석 위치 · 개별 폴더 기준";
+            else
+            {
+                MapFreeSpaceText = "확인 중";
+                var request = _diskSpaceCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                _diskSpaceTask = LoadMapFreeSpaceAsync(path, request);
+            }
+        }
+        Changed(nameof(MapFreeSpaceText)); Changed(nameof(MapFreeSpaceNote));
+    }
+    private async Task LoadMapFreeSpaceAsync(string path, CancellationTokenSource request)
+    {
+        try
+        {
+            var space = await _diskSpaceReader!.ReadAsync(path, request.Token).WaitAsync(request.Token);
+            if (request.IsCancellationRequested || !ReferenceEquals(request, _diskSpaceCancellation)) return;
+            MapFreeSpaceText = DisplayFormat.Bytes(space.FreeBytes);
+            MapFreeSpaceNote = $"{space.ReadAt:HH:mm:ss} 조회 · 해당 폴더의 디스크 기준" +
+                (space.AvailableBytes < space.FreeBytes ? $" · 사용자 사용 가능 {DisplayFormat.Bytes(space.AvailableBytes)}" : "");
+        }
+        catch (OperationCanceledException)
+        {
+            if (ReferenceEquals(request, _diskSpaceCancellation)) MapFreeSpaceText = "조회 시간 초과 또는 중단";
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or OverflowException or System.Security.SecurityException)
+        {
+            if (ReferenceEquals(request, _diskSpaceCancellation)) MapFreeSpaceText = "확인 불가";
+        }
+        finally
+        {
+            if (ReferenceEquals(request, _diskSpaceCancellation)) { Changed(nameof(MapFreeSpaceText)); Changed(nameof(MapFreeSpaceNote)); }
+        }
     }
 
     private void OpenRow(ResultRow? row)
