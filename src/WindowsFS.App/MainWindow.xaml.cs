@@ -44,6 +44,10 @@ public partial class MainWindow : Window
     private void MinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     private void MaximizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     private void CloseClick(object sender, RoutedEventArgs e) => Close();
+    private void BreadcrumbScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (e.ExtentWidthChange != 0 && sender is ScrollViewer scroll) scroll.ScrollToRightEnd();
+    }
     private void MapItemInvoked(object? sender, MapItem e) => _viewModel.NavigateMap(e);
     private void ResultsDoubleClick(object sender, MouseButtonEventArgs e)
     {

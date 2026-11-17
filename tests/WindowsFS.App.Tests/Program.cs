@@ -39,6 +39,10 @@ internal static class Program
         {
             ("Actual XAML realizes a full-width dashboard and read-only result bindings", XamlSmoke),
             ("Dashboard cards and return navigation retain saved analysis without scanning", DashboardNavigation),
+            ("Page headings remain aligned and hide duplicate titles and saved-status footer", RefinedPageHeadings),
+            ("Fixed-width space maps coexist with system details when there is room", ResponsiveSpaceMap),
+            ("Breadcrumb navigation preserves exact indexed ancestors without scanning", BreadcrumbNavigation),
+            ("Actual breadcrumb buttons navigate the saved folder tree", BreadcrumbXaml),
             ("Folder browsing reads metadata without changing the source tree", ReadOnlyFolderBrowsing),
             ("Folder picker navigation and confirmation select the requested directory", FolderPickerNavigation),
             ("Invalid picker paths never fall back to the previously visited folder", FolderPickerInvalidPaths),
@@ -226,6 +230,228 @@ internal static class Program
             Equal(0, store.SaveCalls);
             Equal(0, store.DeleteCalls);
             Check(!window.IsVisible, "Dashboard navigation tests must not display a desktop window.");
+        }
+        finally { window.Close(); }
+    }
+
+    private static async Task RefinedPageHeadings()
+    {
+        var store = new StubStore(new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow.AddDays(-1)))
+        {
+            OnDelete = _ => Task.FromException(new IOException("Synthetic cache deletion failure"))
+        };
+        var vm = CreateViewModel(new StubScanner((_, _, _) =>
+            throw new InvalidOperationException("Heading navigation must not scan.")), store);
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            await vm.RestoreLastScanAsync();
+            var content = (FrameworkElement)window.Content;
+            Render(content);
+            var title = (TextBlock)window.FindName("PageTitleText");
+            var back = (Button)window.FindName("DashboardBackButton");
+            var footer = (TextBlock)window.FindName("FooterStatusText");
+            var dashboardPosition = title.TranslatePoint(new Point(), content);
+            Check(!vm.ShowStatus && !IsEffectivelyVisible(footer),
+                "The saved-analysis status remains visible in the footer.");
+
+            foreach (var view in new[] { "files", "folders", "types", "overview" })
+            {
+                vm.NavigateCommand.Execute(view);
+                Render(content);
+                var position = title.TranslatePoint(new Point(), content);
+                Check(Math.Abs(position.X - dashboardPosition.X) < 0.5 &&
+                    Math.Abs(position.Y - dashboardPosition.Y) < 0.5,
+                    "The dashboard return control shifted the page heading.");
+                if (vm.IsDetailView)
+                {
+                    var returnPosition = back.TranslatePoint(new Point(), content);
+                    Check(IsEffectivelyVisible(back) && returnPosition.Y + back.ActualHeight <= dashboardPosition.Y,
+                        "The return control overlaps the page heading instead of occupying separate navigation space.");
+                }
+                if (view == "files")
+                {
+                    Equal(1, Descendants<TextBlock>(content).Count(text =>
+                        text.Text == "가장 큰 파일" && IsEffectivelyVisible(text)));
+                    Check(!vm.ShowTableTitle && !IsEffectivelyVisible((TextBlock)window.FindName("TableTitleText")),
+                        "The largest-files table repeats its page heading.");
+                }
+            }
+
+            await vm.DeleteSavedAnalysisAsync();
+            Render(content);
+            Check(vm.ShowStatus && IsEffectivelyVisible(footer) && footer.Text == vm.Status &&
+                footer.Text.Contains("실패", StringComparison.Ordinal),
+                "Removing the saved-status footer also hid a functional failure status.");
+        }
+        finally { window.Close(); }
+    }
+
+    private static async Task ResponsiveSpaceMap()
+    {
+        var vm = CreateSystemViewModel();
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            await vm.ScanAsync();
+            vm.SetMapLayoutCommand.Execute("donut");
+            var content = (FrameworkElement)window.Content;
+            var mapPanel = (FrameworkElement)window.FindName("SpaceMapPanel");
+            var details = (FrameworkElement)window.FindName("SystemInfoPanel");
+            var column = (ColumnDefinition)window.FindName("MapColumn");
+            var map = Descendants<SpaceMap>(content).Single();
+            var originalItems = vm.MapItems;
+
+            foreach (var width in new[] { 1_440d, 1_650d })
+            {
+                LayoutAt(content, new Size(width, 920));
+                AssertFixedMap();
+                vm.SelectedRow = vm.Rows.Single(row => row.Path == @"X:\pagefile.sys");
+                LayoutAt(content, new Size(width, 920));
+                Check(vm.HasSystemInfo && IsEffectivelyVisible(details), "The system description did not open.");
+                AssertFixedMap();
+                Check(Descendants<DataGrid>(content).Single().ActualWidth >= 480,
+                    "Showing the map and description squeezed the results below their usable width.");
+            }
+
+            LayoutAt(content, new Size(1100, 760));
+            Check(!IsEffectivelyVisible(mapPanel) && column.ActualWidth == 0 && IsEffectivelyVisible(details),
+                "A narrow window did not prioritize the results and system explanation.");
+            Equal(SpaceMapLayout.Donut, map.LayoutMode);
+            Check(ReferenceEquals(originalItems, vm.MapItems), "Resizing rebuilt or discarded the map's analysis.");
+
+            LayoutAt(content, new Size(1440, 920));
+            AssertFixedMap();
+            vm.DismissSystemInfoCommand.Execute(null);
+            LayoutAt(content, new Size(1100, 760));
+            AssertFixedMap();
+            Check(!IsEffectivelyVisible(details), "Dismissing the explanation left its sidebar visible.");
+            vm.NavigateCommand.Execute("files");
+            LayoutAt(content, new Size(1440, 920));
+            Check(column.ActualWidth == 0 && !IsEffectivelyVisible(mapPanel),
+                "A page without a space map retained a blank fixed-width column.");
+
+            void AssertFixedMap()
+            {
+                Check(IsEffectivelyVisible(mapPanel), "An adequately wide result view hid its space map.");
+                Check(Math.Abs(mapPanel.ActualWidth - 360) < 0.5 && Math.Abs(column.ActualWidth - 376) < 0.5,
+                    $"The map resized instead of retaining 360 pixels: panel {mapPanel.ActualWidth}, column {column.ActualWidth}.");
+                Equal(SpaceMapLayout.Donut, map.LayoutMode);
+            }
+        }
+        finally { window.Close(); }
+    }
+
+    private static async Task BreadcrumbNavigation()
+    {
+        const int depth = 32;
+        var upperPaths = Enumerable.Range(0, depth).Select(index => $"Level{index:D2}").ToArray();
+        var lowerPaths = upperPaths.ToArray();
+        upperPaths[^1] = ". ";
+        lowerPaths[^1] = "...";
+        var upper = Branch("Case", upperPaths, 100);
+        var lower = Branch("case", lowerPaths, 300);
+        var root = new FolderNode(FixturePath, 400, 2, [upper, lower]);
+        var result = new ScanResult([root], [], [new FileTypeSummary(".bin", 400, 2)],
+            400, 2, 2 * (depth + 1) + 1, 0, TimeSpan.FromSeconds(1), false);
+        var store = new StubStore(new SavedScan(result, FixturePath, DateTimeOffset.UtcNow.AddDays(-1)));
+        var scanner = new StubScanner((_, _, _) => throw new InvalidOperationException("Breadcrumbs must not enumerate."));
+        var vm = CreateViewModel(scanner, store);
+        await vm.RestoreLastScanAsync();
+        vm.SelectDriveCommand.Execute(@"X:\NextAnalysis");
+        vm.SetMapLayoutCommand.Execute("donut");
+        var timestamp = vm.SnapshotDescription;
+        var scope = vm.ResultScope;
+        foreach (var branch in new[] { upper, lower })
+        {
+            var leaf = branch;
+            while (leaf.Children.Count > 0) leaf = leaf.Children.Single();
+            vm.NavigateMap(new MapItem(leaf.Name, "", leaf.TotalBytes, leaf.Path, true));
+            Equal(depth + 3, vm.BreadcrumbItems.Count);
+            Equal("전체", vm.BreadcrumbItems[0].Name);
+            Check(vm.BreadcrumbItems[0].Path is null, "The aggregate breadcrumb is not distinct from filesystem roots.");
+            Equal(FixturePath, vm.BreadcrumbItems[1].Name);
+            Equal(FixturePath, vm.BreadcrumbItems[1].Path!);
+            Equal(branch.Name, vm.BreadcrumbItems[2].Name);
+            Equal(leaf.Path, vm.BreadcrumbItems[^1].Path!);
+            Equal(leaf.Name, vm.BreadcrumbItems[^1].Name);
+            Check(vm.BreadcrumbItems.Count(item => item.IsCurrent) == 1 && vm.BreadcrumbItems[^1].IsCurrent,
+                "The breadcrumb trail does not identify exactly the current folder.");
+            Check(!vm.BreadcrumbItems.Any(item => item.Path == @"X:\"),
+                "Breadcrumbs invented a parent outside the analyzed root.");
+            Check(!vm.NavigateBreadcrumbCommand.CanExecute(vm.BreadcrumbItems[^1]),
+                "The already current breadcrumb remained an actionable navigation target.");
+            vm.Search = "temporary filter";
+            vm.NavigateBreadcrumbCommand.Execute(vm.BreadcrumbItems[2]);
+            Equal(branch.Path, vm.Breadcrumb);
+            Equal("", vm.Search);
+            Equal(branch.Children.Single().Path, vm.Rows.Single().Path);
+            Equal(branch.TotalBytes, vm.MapItems.Sum(item => item.Size));
+            Check(!vm.NavigateBreadcrumbCommand.CanExecute(@"X:\") &&
+                !vm.NavigateBreadcrumbCommand.CanExecute($@"{FixturePath}\CASE"),
+                "Breadcrumb navigation accepted an unindexed or case-folded path.");
+            vm.NavigateBreadcrumbCommand.Execute(@"X:\");
+            Equal(branch.Path, vm.Breadcrumb);
+            Equal(@"X:\NextAnalysis", vm.TargetLabel);
+            Equal(scope, vm.ResultScope);
+            Equal(timestamp, vm.SnapshotDescription);
+            Equal(SpaceMapLayout.Donut, vm.MapLayout);
+        }
+        vm.NavigateBreadcrumbCommand.Execute(null);
+        Equal(1, vm.BreadcrumbItems.Count);
+        Check(vm.BreadcrumbItems[0].Path is null && vm.BreadcrumbItems[0].IsCurrent,
+            "Returning to the aggregate view retained stale folder ancestors.");
+        Equal(FixturePath, vm.Rows.Single().Path);
+        Equal(0, scanner.ProgressReports.Count);
+        Equal(1, store.LoadCalls);
+        Equal(0, store.SaveCalls);
+        await vm.DeleteSavedAnalysisAsync();
+        Equal(0, vm.BreadcrumbItems.Count);
+        Check(!vm.NavigateBreadcrumbCommand.CanExecute(FixturePath),
+            "Deleting the analysis left its former folder index navigable.");
+
+        static FolderNode Branch(string name, string[] descendants, long bytes)
+        {
+            var paths = new List<string> { $@"{FixturePath}\{name}" };
+            foreach (var descendant in descendants) paths.Add(Path.Join(paths[^1], descendant));
+            var node = new FolderNode(paths[^1], bytes, 1);
+            for (var index = paths.Count - 2; index >= 0; index--) node = new FolderNode(paths[index], bytes, 1, [node]);
+            return node;
+        }
+    }
+
+    private static async Task BreadcrumbXaml()
+    {
+        var store = new StubStore(new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow.AddDays(-1)));
+        var scanner = new StubScanner((_, _, _) => throw new InvalidOperationException("Breadcrumb buttons must not enumerate."));
+        var vm = CreateViewModel(scanner, store);
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            await vm.RestoreLastScanAsync();
+            vm.NavigateMap(vm.MapItems.Single(item => item.IsDirectory));
+            vm.OpenRowCommand.Execute(vm.Rows.Single());
+            var content = (FrameworkElement)window.Content;
+            Render(content);
+            var trail = (FrameworkElement)window.FindName("BreadcrumbTrail");
+            Check(IsEffectivelyVisible(trail), "The current-path trail is absent from folder navigation.");
+            var ancestor = Descendants<Button>(trail).Single(button =>
+                button.DataContext is BreadcrumbItem item && item.Path == $@"{FixturePath}\Projects");
+            Check(ReferenceEquals(ancestor.Command, vm.NavigateBreadcrumbCommand) && ancestor.IsEnabled,
+                "An ancestor segment is not an enabled breadcrumb action.");
+            ancestor.Command!.Execute(ancestor.CommandParameter);
+            Render(content);
+            Equal($@"{FixturePath}\Projects", vm.Breadcrumb);
+            Equal("Archive", vm.Rows.Single().Name);
+            var rootButton = Descendants<Button>(trail).Single(button =>
+                button.DataContext is BreadcrumbItem item && item.Path == FixturePath);
+            rootButton.Command!.Execute(rootButton.CommandParameter);
+            Render(content);
+            Equal(FixturePath, vm.Breadcrumb);
+            Equal(2, vm.Rows.Count);
+            Equal(0, scanner.ProgressReports.Count);
+            Equal(0, store.SaveCalls);
+            Check(!window.IsVisible, "The breadcrumb fixture must not open a desktop window.");
         }
         finally { window.Close(); }
     }
@@ -438,7 +664,8 @@ internal static class Program
                 vm.SelectedRow = infoVisible ? vm.Rows[0] : null;
                 RenderSize(content, size);
                 var mapColumn = (ColumnDefinition)window.FindName("MapColumn");
-                Check(vm.IsMapVisible ? mapColumn.ActualWidth > 0 : mapColumn.ActualWidth == 0,
+                var expectedMapVisible = view == "overview" && (!infoVisible || size.Width >= 1_440);
+                Check(expectedMapVisible ? Math.Abs(mapColumn.ActualWidth - 376) < 0.5 : mapColumn.ActualWidth == 0,
                     "Map visibility left the wrong amount of layout space in the result view.");
                 var main = (FrameworkElement)window.FindName("MainContent");
                 Check(main.ActualWidth >= size.Width * 0.9 && main.TranslatePoint(new Point(), content).X < 50,
@@ -1348,7 +1575,7 @@ internal static class Program
         Check(vm.SystemInfo is not null && vm.HasSystemInfo && vm.CanShowSystemInfo,
             "The known page file did not receive a system explanation.");
         Check(vm.OpenSystemHelpCommand.CanExecute(null), "A known system item should offer its official reference.");
-        Check(!vm.IsMapVisible, "The map must yield space to the selected explanation.");
+        Check(vm.IsMapVisible, "Selecting a system explanation must not unconditionally hide the map.");
         var info = vm.SystemInfo!;
         Check(new[] { info.Title, info.Purpose, info.ManagedBy, info.Necessity, info.CleanupAdvice, info.MatchBasis }
             .All(text => !string.IsNullOrWhiteSpace(text)), "The explanation omitted a requested field.");
@@ -1359,7 +1586,7 @@ internal static class Program
         Check(!vm.HasSystemInfo && vm.CanShowSystemInfo && vm.IsMapVisible,
             "Dismissing an explanation should restore the map without losing the item metadata.");
         vm.ShowSystemInfoCommand.Execute(null);
-        Check(vm.HasSystemInfo && !vm.IsMapVisible, "A dismissed explanation could not be reopened.");
+        Check(vm.HasSystemInfo && vm.IsMapVisible, "Reopening an explanation unexpectedly disabled the map.");
 
         foreach (var path in new[] { @"X:\Windows\System32\personal-notes.txt",
                      @"X:\Users\Sample\Documents\pagefile.sys", @"X:\Users\Sample\Documents\report.docx" })
@@ -1497,14 +1724,28 @@ internal static class Program
 
     private static void Render(FrameworkElement content)
     {
-        content.Measure(new Size(1440, 920));
-        content.Arrange(new Rect(0, 0, 1440, 920));
-        content.UpdateLayout();
-        DrainDispatcher();
-        content.UpdateLayout();
+        LayoutAt(content, new Size(1440, 920));
         // In-memory only: ensure native draw and template code runs, without saving a capture.
         var bitmap = new RenderTargetBitmap(1440, 920, 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(content);
+    }
+
+    private static void LayoutAt(FrameworkElement content, Size size)
+    {
+        content.Measure(size);
+        content.Arrange(new Rect(new Point(), size));
+        content.UpdateLayout();
+        DrainDispatcher();
+        content.UpdateLayout();
+    }
+
+    private static bool IsEffectivelyVisible(DependencyObject element)
+    {
+        // Fixtures deliberately never show their Window; inspect its content's visibility only.
+        for (DependencyObject? current = element; current is not null && current is not Window;
+             current = VisualTreeHelper.GetParent(current))
+            if (current is UIElement ui && ui.Visibility != Visibility.Visible) return false;
+        return true;
     }
 
     private static IEnumerable<T> Descendants<T>(DependencyObject parent) where T : DependencyObject

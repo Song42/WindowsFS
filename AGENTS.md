@@ -15,6 +15,8 @@ The user requires WindowsFS to remain a read-only analyzer of user and system fi
 ## Navigation
 
 - Keep the main window free of a sidebar. Largest files, folder browsing, and file-type views are reached from dashboard cards, with a visible return to the dashboard.
+- Keep page titles aligned independently of the dashboard return control. Folder-path navigation must use the saved result index without rescanning or accessing paths outside the analyzed scope.
+- Space composition uses a fixed width. A system explanation alone must not hide it; collapse it only when the available layout width is insufficient.
 - Main-window controls for all local drives, individual disks, and disk-capacity widgets are deferred until the user decides their UI. Do not add replacement drive widgets by inference. Internal scan targets and read-only folder selection remain available.
 
 ## Verification and privacy

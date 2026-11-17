@@ -12,11 +12,15 @@ Target selection uses an app-owned read-only folder picker, because native Windo
 
 ## Dashboard navigation
 
-The main window uses its full width without a sidebar. Three dashboard cards open largest files, folder browsing, and file-type summaries; detail pages expose a dashboard return button. Navigation reuses the current in-memory analysis, preserves its selected map layout, and does not scan or persist data. Dashboard counts use the complete result rather than the filtered detail list. Drive selectors and drive-capacity widgets are deferred until the user decides their interface. Internal drive discovery remains available for scanning and the read-only folder picker. Scan target controls and saved-analysis deletion remain accessible on every page. Result lists retain independent virtualized scrolling at compact window sizes.
+The main window uses its full width without a sidebar. Three dashboard cards open largest files, folder browsing, and file-type summaries; detail pages expose a dashboard return button in the window chrome, keeping page titles aligned. The largest-files page has one title, and restored-data status remains in the header instead of repeating in the footer. Navigation reuses the current in-memory analysis, preserves its selected map layout, and does not scan or persist data. Dashboard counts use the complete result rather than the filtered detail list. Drive selectors and drive-capacity widgets are deferred until the user decides their interface. Internal drive discovery remains available for scanning and the read-only folder picker. Scan target controls and saved-analysis deletion remain accessible on every page. Result lists retain independent virtualized scrolling at compact window sizes.
+
+Folder breadcrumbs follow the stored parent index, starting at the analyzed root rather than inventing navigable ancestors outside the snapshot. Each ancestor button navigates existing result data only; the current location and unknown paths are not navigation targets. Exact path casing and literal NTFS names are preserved. The path strip scrolls horizontally for deep trees and follows the current folder without expanding the result header vertically.
 
 ## Space composition views
 
 `SpaceMap` draws either blocks or a donut using the same bounded `MapItem` collection and palette. Switching the layout changes presentation only: it does not scan, rebuild aggregates, or write a snapshot. The chosen layout stays active during folder and page navigation for the current session. Both layouts support folder activation and keyboard selection. Donut hit testing follows the ring sectors rather than their rectangular bounds, so its center and empty surroundings do not open folders. Small and grouped entries retain their represented bytes.
+
+Map eligibility belongs to the view model; actual visibility depends on the result container's available width. `SpaceMapVisibilityConverter` reserves a fixed 360-pixel map plus a 16-pixel gap, at least 480 pixels for the list, and another 342 pixels when system explanations are open. Selecting a system item does not hide the map when these regions fit. Narrowing the window collapses the map and its column together, and widening it restores the same fixed width automatically.
 
 ## System item explanations
 

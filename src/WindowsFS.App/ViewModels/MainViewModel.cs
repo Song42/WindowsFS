@@ -38,6 +38,8 @@ public sealed record ResultRow(string Name, string Path, long Bytes, long Count,
     public string Glyph => IsDirectory ? "\uE8B7" : Kind == "파일 형식" ? "\uE8A5" : "\uE7C3";
 }
 
+public sealed record BreadcrumbItem(string Name, string? Path, bool IsCurrent);
+
 public static class DisplayFormat
 {
     public static string Bytes(long value)
@@ -81,6 +83,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private TimeSpan _elapsed;
     private IReadOnlyList<ResultRow> _rows = [];
     private IReadOnlyList<MapItem> _mapItems = [];
+    private IReadOnlyList<BreadcrumbItem> _breadcrumbItems = [];
     private SpaceMapLayout _mapLayout = SpaceMapLayout.Blocks;
     private ResultRow? _selectedRow;
     private SystemItemInfo? _systemInfo;
@@ -107,6 +110,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         DeleteSavedAnalysisCommand = new RelayCommand(async _ => await DeleteSavedAnalysisAsync(), _ => _store is not null && IsIdle && HasSavedAnalysis);
         SelectDriveCommand = new RelayCommand(p => SelectPath(p as string), _ => IsIdle);
         NavigateCommand = new RelayCommand(p => { _view = p as string ?? "overview"; _search = ""; Changed(nameof(Search)); RefreshView(); });
+        NavigateBreadcrumbCommand = new RelayCommand(NavigateBreadcrumb, CanNavigateBreadcrumb);
         SetMapLayoutCommand = new RelayCommand(p =>
         {
             if (p is "blocks") MapLayout = SpaceMapLayout.Blocks;
@@ -130,6 +134,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand DeleteSavedAnalysisCommand { get; }
     public ICommand SelectDriveCommand { get; }
     public ICommand NavigateCommand { get; }
+    public ICommand NavigateBreadcrumbCommand { get; }
     public ICommand SetMapLayoutCommand { get; }
     public ICommand OpenRowCommand { get; }
     public ICommand RevealCommand { get; }
@@ -142,7 +147,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public SystemItemInfo? SystemInfo => _systemInfo;
     public bool CanShowSystemInfo => _systemInfo is not null;
     public bool HasSystemInfo => CanShowSystemInfo && !_systemInfoDismissed;
-    public bool IsMapVisible => ShowMap && !HasSystemInfo;
+    // Available width, rather than system-item selection alone, determines the rendered map visibility.
+    public bool IsMapVisible => ShowMap;
     public bool IsBusy { get => _busy; private set { _busy = value; Changed(); Changed(nameof(IsIdle)); Changed(nameof(ScanLabel)); CommandManager.InvalidateRequerySuggested(); } }
     public bool IsIdle => !IsBusy && !IsRestoring && !IsSaving && !IsDeleting;
     public bool IsRestoring { get => _isRestoring; private set { _isRestoring = value; Changed(); Changed(nameof(IsIdle)); Changed(nameof(ScanState)); CommandManager.InvalidateRequerySuggested(); } }
@@ -166,7 +172,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         (_snapshotSaved ? "저장됨" :
          _result?.IsCancelled == true ? "부분 결과 · 미저장" : "미저장");
     public string TargetLabel => _selectedPath ?? "모든 로컬 드라이브";
-    public string Status { get => _status; private set { _status = value; Changed(); } }
+    public string Status { get => _status; private set { _status = value; Changed(); Changed(nameof(ShowStatus)); } }
+    public bool ShowStatus => !string.IsNullOrEmpty(Status) && Status != "저장된 분석";
     public string CurrentPath { get => _currentPath; private set { _currentPath = value; Changed(); } }
     public string TotalSize => DisplayFormat.Bytes(_bytes);
     public string FileCount => _files.ToString("N0");
@@ -180,8 +187,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string PageTitle => _view switch { "files" => "가장 큰 파일", "folders" => "폴더 탐색", "types" => "파일 형식", _ => "대시보드" };
     public string PageDescription => _view switch { "files" => "최대 1,000개 · 용량순", "folders" => "폴더별 용량 · 두 번 클릭: 하위 폴더 열기", "types" => "확장자별 용량 합계", _ => "파일·폴더별 용량 분포" };
     public string TableTitle => _view switch { "folders" => "하위 폴더", "types" => "형식별 사용량", _ => "가장 큰 파일" };
+    public bool ShowTableTitle => _view != "files";
     public string TableHint => _view == "folders" ? "선택: 시스템 항목 설명 · 두 번 클릭: 폴더 열기" : _view == "types" ? "확장자 없는 파일 포함" : "상위 1,000개 · 선택: 시스템 항목 설명";
     public string Breadcrumb => _folderPath ?? "분석한 모든 드라이브 / 폴더";
+    public IReadOnlyList<BreadcrumbItem> BreadcrumbItems => _breadcrumbItems;
     public string MapTitle => _view == "folders" ? "폴더 공간 구성" : "공간 구성";
     public SpaceMapLayout MapLayout
     {
@@ -297,6 +306,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _resultScope = TargetLabel;
         Changed(nameof(ResultScope));
         _folders.Clear(); _parents.Clear(); _folderPath = null;
+        RefreshBreadcrumbs(); Changed(nameof(Breadcrumb));
         Rows = []; MapItems = [];
         _bytes = _files = _folderCount = _skipped = 0; _elapsed = TimeSpan.Zero;
         Status = "분석 중";
@@ -479,10 +489,56 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void RefreshView()
     {
-        foreach (var name in new[] { nameof(PageTitle), nameof(PageDescription), nameof(TableTitle), nameof(TableHint), nameof(ShowMap), nameof(ShowFolderNavigation), nameof(Breadcrumb), nameof(MapTitle), nameof(IsOverview), nameof(IsDetailView), nameof(IsFiles), nameof(IsFolders), nameof(IsTypes) }) Changed(name);
+        RefreshBreadcrumbs();
+        foreach (var name in new[] { nameof(PageTitle), nameof(PageDescription), nameof(TableTitle), nameof(ShowTableTitle), nameof(TableHint), nameof(ShowMap), nameof(ShowFolderNavigation), nameof(Breadcrumb), nameof(MapTitle), nameof(IsOverview), nameof(IsDetailView), nameof(IsFiles), nameof(IsFolders), nameof(IsTypes) }) Changed(name);
         RefreshRows(); RefreshMap();
         Changed(nameof(IsMapVisible));
         CommandManager.InvalidateRequerySuggested();
+    }
+
+    private bool TryGetBreadcrumbPath(object? parameter, out string? path)
+    {
+        path = parameter switch { BreadcrumbItem item => item.Path, string value => value, _ => null };
+        return (parameter is null or BreadcrumbItem or string) && (path is null || _folders.ContainsKey(path));
+    }
+
+    private bool CanNavigateBreadcrumb(object? parameter) => HasResult && IsIdle &&
+        TryGetBreadcrumbPath(parameter, out var path) &&
+        (_view != "folders" || !string.Equals(path, _folderPath, StringComparison.Ordinal));
+
+    private void NavigateBreadcrumb(object? parameter)
+    {
+        if (!CanNavigateBreadcrumb(parameter) || !TryGetBreadcrumbPath(parameter, out var path)) return;
+        _folderPath = path;
+        _view = "folders";
+        _search = "";
+        Changed(nameof(Search));
+        RefreshView();
+    }
+
+    private void RefreshBreadcrumbs()
+    {
+        var items = new List<BreadcrumbItem>();
+        if (_result is not null)
+        {
+            items.Add(new BreadcrumbItem("전체", null, _folderPath is null));
+            var ancestors = new Stack<string>();
+            var path = _folderPath;
+            while (path is not null && _folders.ContainsKey(path))
+            {
+                ancestors.Push(path);
+                path = _parents.TryGetValue(path, out var parent) ? parent : null;
+            }
+            while (ancestors.TryPop(out path))
+            {
+                var folder = _folders[path];
+                // Start at the analyzed root; ancestors outside the saved tree are not navigable.
+                var name = _parents.ContainsKey(path) ? folder.Name : folder.Path;
+                items.Add(new BreadcrumbItem(name, path, string.Equals(path, _folderPath, StringComparison.Ordinal)));
+            }
+        }
+        _breadcrumbItems = items;
+        Changed(nameof(BreadcrumbItems));
     }
 
     private void UpdateSystemInfo()
