@@ -37,6 +37,9 @@ internal static partial class Program
         };
         var tests = new (string Name, Func<Task> Run)[]
         {
+            ("MediaInfo reads native audio and video tracks without source changes", NativeMediaInfo),
+            ("MediaInfo rejects external references and observes cancellation", MediaInfoBoundaries),
+            ("MediaInfo XAML defaults collapsed, reads once and rejects stale selection results", MediaInfoSelection),
             ("Details and bounded text previews leave synthetic files unchanged", FileDetails),
             ("Image and PDF previews render bounded pages without source changes", ImageAndPdfPreviews),
             ("MP3 selection prepares compact audio controls without playback or source changes", AudioPreviews),

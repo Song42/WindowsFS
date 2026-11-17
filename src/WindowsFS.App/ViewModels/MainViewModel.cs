@@ -111,6 +111,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private IReadOnlyList<DetailField> _details = [];
     public IReadOnlyList<DetailField> Details => _details;
     private readonly IFilePreviewReader _previewReader;
+    private readonly IMediaInfoReader _mediaInfoReader;
+    private Task _mediaInfoTask = Task.CompletedTask;
+    private bool _mediaInfoExpanded, _mediaInfoLoaded;
+    public IReadOnlyList<MediaInfoGroup> MediaInfoGroups { get; private set; } = [];
+    public string MediaInfoStatus { get; private set; } = "";
+    public bool HasMediaInfo => DetailRow is { } row && MediaInfoReader.Supports(row);
+    public bool MediaInfoExpanded
+    {
+        get => _mediaInfoExpanded;
+        set
+        {
+            if (_mediaInfoExpanded == value) return;
+            _mediaInfoExpanded = value; Changed();
+            if (value && HasMediaInfo && !_mediaInfoLoaded) _mediaInfoTask = LoadMediaInfoAsync();
+        }
+    }
     private Task _previewTask = Task.CompletedTask;
     private long _previewRequest;
     public FilePreview Preview { get; private set; } = new();
@@ -131,12 +147,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     // Injected scanners use an explicit store so tests and alternative hosts never write a user's cache implicitly.
     public MainViewModel(IDiskScanner scanner, IScanResultStore? store = null, SystemItemCatalog? systemCatalog = null, ItemDetailsReader? detailsReader = null,
-        IReadOnlyFileBrowser? fileBrowser = null, IFilePreviewReader? previewReader = null)
+        IReadOnlyFileBrowser? fileBrowser = null, IFilePreviewReader? previewReader = null, IMediaInfoReader? mediaInfoReader = null)
     {
         _scanner = scanner;
         _detailsReader = detailsReader;
         _fileBrowser = fileBrowser;
         _previewReader = previewReader ?? new FilePreviewReader();
+        _mediaInfoReader = mediaInfoReader ?? new MediaInfoReader();
         PreviousPreviewPageCommand = new RelayCommand(_ => _previewTask = LoadPreviewAsync(Preview.PageIndex - 1),
             _ => !_previewBusy && Preview.PageIndex > 0);
         NextPreviewPageCommand = new RelayCommand(_ => _previewTask = LoadPreviewAsync(Preview.PageIndex + 1),
@@ -624,6 +641,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _detailsCancellation?.Dispose();
         var cancellation = _detailsCancellation = new CancellationTokenSource();
         var row = HasDetails ? DetailRow : null;
+        _mediaInfoExpanded = false;
+        _mediaInfoLoaded = false;
+        _mediaInfoTask = Task.CompletedTask;
+        MediaInfoGroups = []; MediaInfoStatus = "";
+        Changed(nameof(MediaInfoExpanded)); Changed(nameof(HasMediaInfo));
+        Changed(nameof(MediaInfoGroups)); Changed(nameof(MediaInfoStatus));
         _previewRequest++;
         _previewBusy = false;
         SetPreview(new FilePreview(row is null ? "" : FilePreviewReader.Description(row)));
@@ -658,6 +681,32 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public Task WaitForPreviewAsync() => _previewTask;
+
+    public Task WaitForMediaInfoAsync() => _mediaInfoTask;
+
+    private async Task LoadMediaInfoAsync()
+    {
+        if (!HasMediaInfo || _detailsCancellation is null) return;
+        var row = DetailRow!;
+        var selection = _detailsCancellation;
+        _mediaInfoLoaded = true;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(selection.Token);
+        cancellation.CancelAfter(TimeSpan.FromSeconds(12));
+        MediaInfoStatus = "미디어 정보 읽는 중"; Changed(nameof(MediaInfoStatus));
+        try
+        {
+            var result = await _mediaInfoReader.ReadAsync(row, cancellation.Token).WaitAsync(cancellation.Token);
+            if (cancellation.IsCancellationRequested || !ReferenceEquals(selection, _detailsCancellation)) return;
+            MediaInfoGroups = result.Groups; MediaInfoStatus = result.Status;
+            Changed(nameof(MediaInfoGroups)); Changed(nameof(MediaInfoStatus));
+        }
+        catch (OperationCanceledException)
+        {
+            if (!ReferenceEquals(selection, _detailsCancellation)) return;
+            MediaInfoStatus = "미디어 정보 읽기 중단"; Changed(nameof(MediaInfoStatus));
+            _mediaInfoLoaded = false;
+        }
+    }
 
     private async Task LoadPreviewAsync(int pageIndex)
     {

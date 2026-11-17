@@ -11,6 +11,9 @@
   <ItemGroup>
     <InternalsVisibleTo Include="WindowsFS.App.Tests" />
     <PackageReference Include="bblanchon.PDFium.Win32" Version="159.0.8152" />
+    <PackageReference Include="MediaInfo.Core.Native" Version="26.10.0" />
+    <Content Include="../../third-party/mediainfo/**/*" Link="third-party/mediainfo/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../third-party/pdfium/**/*" Link="third-party/pdfium/%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="../WindowsFS.Core/WindowsFS.Core.csproj" />

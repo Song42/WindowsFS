@@ -374,6 +374,35 @@
                         <Button Content="Microsoft 문서 ↗" Command="{Binding OpenSystemHelpCommand}" Margin="0,15,0,0" Padding="12,9" FontSize="11" />
                         </StackPanel>
                       </StackPanel>
+                      <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0" Visibility="{Binding HasMediaInfo, Converter={StaticResource Visible}}">
+                        <Expander x:Name="MediaInfoSection" Header="MediaInfo" IsExpanded="{Binding MediaInfoExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
+                          <StackPanel Margin="0,14,0,0">
+                            <TextBlock Text="{Binding MediaInfoStatus}" Foreground="{StaticResource Muted}" TextWrapping="Wrap" FontSize="11" />
+                            <ItemsControl ItemsSource="{Binding MediaInfoGroups}">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                  <StackPanel Margin="0,0,0,8">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="{StaticResource Accent}" Margin="0,8,0,12" />
+                                    <ItemsControl ItemsSource="{Binding Fields}">
+                                      <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><controls:ResponsiveDetailsPanel /></ItemsPanelTemplate>
+                                      </ItemsControl.ItemsPanel>
+                                      <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                          <StackPanel Margin="0,0,0,13">
+                                            <TextBlock Text="{Binding Label}" Foreground="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4" />
+                                            <TextBlock Text="{Binding Value}" TextWrapping="Wrap" FontSize="12" />
+                                          </StackPanel>
+                                        </DataTemplate>
+                                      </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                  </StackPanel>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </StackPanel>
+                        </Expander>
+                      </Border>
                       <Border x:Name="PreviewSection" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0" Visibility="{Binding HasDetails, Converter={StaticResource Visible}}">
                         <StackPanel>
                           <TextBlock Text="미리보기" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,14" />
