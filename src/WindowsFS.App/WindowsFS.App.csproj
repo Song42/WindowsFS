@@ -9,6 +9,7 @@
     <Version>0.7.1</Version>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="WindowsFS.App.Tests" />
     <PackageReference Include="bblanchon.PDFium.Win32" Version="159.0.8152" />
     <Content Include="../../third-party/pdfium/**/*" Link="third-party/pdfium/%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

@@ -44,6 +44,7 @@ internal static partial class Program
             ("Previews reject malformed, external and oversized content and never autoplay video", PreviewLimits),
             ("Preview selection cancellation, page bounds and actual XAML bindings stay consistent", PreviewSelectionAndPages),
             ("Actual XAML realizes a full-width dashboard and read-only result bindings", XamlSmoke),
+            ("Maximized chrome fits monitor work areas at every taskbar edge and DPI", MaximizedWorkArea),
             ("Dashboard cards and return navigation retain saved analysis without scanning", DashboardNavigation),
             ("Page headings remain aligned and hide duplicate titles and saved-status footer", RefinedPageHeadings),
             ("Fixed-width space maps coexist with system details when there is room", ResponsiveSpaceMap),

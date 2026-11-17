@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Interop;
 using WindowsFS.App.Controls;
 using WindowsFS.App.ViewModels;
 
@@ -13,6 +14,7 @@ public partial class MainWindow : Window
     private readonly MainViewModel _viewModel = new();
     private bool _closeAfterPersistence;
     private bool _waitingForPersistence;
+    private HwndSource? _windowSource;
     public MainWindow()
     {
         InitializeComponent();
@@ -22,6 +24,28 @@ public partial class MainWindow : Window
         Width = Math.Min(Width, workArea.Width);
         Height = Math.Min(Height, workArea.Height);
         DataContext = _viewModel;
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        _windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+        _windowSource?.AddHook(WindowMessage);
+    }
+
+    private nint WindowMessage(nint window, int message, nint wParam, nint lParam, ref bool handled)
+    {
+        if (message == WindowSizing.GetMinMaxInfoMessage)
+            WindowSizing.UpdateMaximizedBounds(window, lParam);
+        // Let WPF process the corrected bounds too, preserving its layout and resize constraints.
+        return 0;
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        if (_windowSource is { IsDisposed: false }) _windowSource.RemoveHook(WindowMessage);
+        _windowSource = null;
+        base.OnClosed(e);
     }
 
     private async void WindowLoaded(object sender, RoutedEventArgs e)
