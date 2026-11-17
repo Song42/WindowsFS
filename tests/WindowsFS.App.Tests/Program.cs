@@ -23,7 +23,7 @@ internal static partial class Program
     private const string FixturePath = @"X:\WindowsFSFixture";
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
         // Do not run Application or show a Window: the fixture never enumerates real drives.
         var application = new WindowsFS.App.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -85,6 +85,9 @@ internal static partial class Program
             ("Known folder explanations follow navigation and support dismissing", SystemFolderNavigation),
             ("Actual XAML renders the selected system explanation", SystemItemXaml)
         };
+        if (args.Length == 2 && args[0] == "--filter")
+            tests = tests.Where(test => test.Name.Contains(args[1], StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (tests.Length == 0) return 2;
         var failures = 0;
         foreach (var test in tests)
         {
@@ -104,6 +107,7 @@ internal static partial class Program
         }
         Console.WriteLine($"{tests.Length - failures}/{tests.Length} WPF tests passed.");
         application.Shutdown();
+        Console.WriteLine("WPF application shutdown completed.");
         return failures == 0 ? 0 : 1;
     }
 

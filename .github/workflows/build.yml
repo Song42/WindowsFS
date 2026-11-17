@@ -31,6 +31,12 @@ jobs:
           dotnet tests/WindowsFS.App.Tests/bin/Release/net10.0-windows10.0.19041.0/WindowsFS.App.Tests.dll
           $testExitCode = $LASTEXITCODE
           Write-Output "WPF test process exit code: $testExitCode"
+          if ($testExitCode -ne 0) {
+            foreach ($probe in @('Image and PDF', 'never autoplay video')) {
+              dotnet tests/WindowsFS.App.Tests/bin/Release/net10.0-windows10.0.19041.0/WindowsFS.App.Tests.dll --filter $probe
+              Write-Output "Synthetic preview probe '$probe' exit code: $LASTEXITCODE"
+            }
+          }
           exit $testExitCode
       - name: Publish portable app
         shell: pwsh
