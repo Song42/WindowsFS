@@ -274,7 +274,25 @@
                     </TextBox.Style>
                   </TextBox>
                   <Grid Grid.Row="2">
-                    <DataGrid x:Name="ResultsGrid" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}" MouseDoubleClick="ResultsDoubleClick" KeyDown="ResultsKeyDown" AutomationProperties.Name="분석 결과 목록">
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <StackPanel x:Name="FolderNavigationEntries" Visibility="{Binding ShowFolderNavigation, Converter={StaticResource Visible}}" Margin="16,0,16,0">
+                      <Button x:Name="CurrentFolderEntry" Padding="0" Height="36" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" AutomationProperties.Name=".">
+                        <StackPanel Orientation="Horizontal">
+                          <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="#B9AAEC" Width="30" FontSize="17" />
+                          <TextBlock Text="." FontSize="12" />
+                        </StackPanel>
+                      </Button>
+                      <Button x:Name="ParentFolderEntry" Command="{Binding UpCommand}" PreviewMouseLeftButtonDown="ParentFolderMouseDown" Padding="0" Height="36" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" AutomationProperties.Name="..">
+                        <StackPanel Orientation="Horizontal">
+                          <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="#B9AAEC" Width="30" FontSize="17" />
+                          <TextBlock Text=".." FontSize="12" />
+                        </StackPanel>
+                      </Button>
+                    </StackPanel>
+                    <DataGrid x:Name="ResultsGrid" Grid.Row="1" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}" MouseDoubleClick="ResultsDoubleClick" KeyDown="ResultsKeyDown" AutomationProperties.Name="분석 결과 목록">
                       <DataGrid.Columns>
                         <DataGridTemplateColumn Header="이름" Width="*" SortMemberPath="Name">
                           <DataGridTemplateColumn.CellTemplate>
@@ -306,7 +324,7 @@
                         </DataGridTemplateColumn>
                       </DataGrid.Columns>
                     </DataGrid>
-                    <TextBlock Text="항목 없음" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding NoRows, Converter={StaticResource Visible}}" IsHitTestVisible="False" />
+                    <TextBlock Grid.Row="1" Text="항목 없음" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding NoRows, Converter={StaticResource Visible}}" IsHitTestVisible="False" />
                   </Grid>
                   <Border Grid.Row="3" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="12,10">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

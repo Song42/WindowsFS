@@ -452,6 +452,21 @@ internal static class Program
             Render(content);
             var trail = (FrameworkElement)window.FindName("BreadcrumbTrail");
             Check(IsEffectivelyVisible(trail), "The current-path trail is absent from folder navigation.");
+            var details = (FrameworkElement)window.FindName("SystemInfoPanel");
+            Check(vm.HasDetails && IsEffectivelyVisible(details) &&
+                vm.Details.Any(field => field.Label == "전체 경로" && field.Value == $@"{FixturePath}\Projects\Archive"),
+                "Entering an ordinary folder discarded that folder's details.");
+            var dot = (Button)window.FindName("CurrentFolderEntry");
+            var parent = (Button)window.FindName("ParentFolderEntry");
+            Check(IsEffectivelyVisible(dot) && IsEffectivelyVisible(parent) && dot.Command is null &&
+                ReferenceEquals(parent.Command, vm.UpCommand), "Pinned dot entries are missing or have the wrong action.");
+            var currentDetails = vm.Details;
+            dot.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(ReferenceEquals(currentDetails, vm.Details), "Clicking dot changed the current details.");
+            vm.Search = "no matching folders";
+            Render(content);
+            Check(IsEffectivelyVisible(dot) && IsEffectivelyVisible(parent) && IsEffectivelyVisible(details),
+                "An empty folder list hid navigation entries or current-folder details.");
             var ancestor = Descendants<Button>(trail).Single(button =>
                 button.DataContext is BreadcrumbItem item && item.Path == $@"{FixturePath}\Projects");
             Check(ReferenceEquals(ancestor.Command, vm.NavigateBreadcrumbCommand) && ancestor.IsEnabled,
@@ -466,6 +481,11 @@ internal static class Program
             Render(content);
             Equal(FixturePath, vm.Breadcrumb);
             Equal(2, vm.Rows.Count);
+            parent.Command!.Execute(parent.CommandParameter);
+            Render(content);
+            Check(vm.BreadcrumbItems.Count == 1 && !parent.IsEnabled && IsEffectivelyVisible(parent),
+                "Parent navigation did not stop at the analyzed scope.");
+            Check(!vm.HasDetails && !IsEffectivelyVisible(details), "The aggregate view retained stale folder details.");
             Equal(0, scanner.ProgressReports.Count);
             Equal(0, store.SaveCalls);
             Check(!window.IsVisible, "The breadcrumb fixture must not open a desktop window.");

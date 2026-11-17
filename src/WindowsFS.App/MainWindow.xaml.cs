@@ -49,6 +49,10 @@ public partial class MainWindow : Window
         if (e.ExtentWidthChange != 0 && sender is ScrollViewer scroll) scroll.ScrollToRightEnd();
     }
     private void MapItemInvoked(object? sender, MapItem e) => _viewModel.NavigateMap(e);
+    private void ParentFolderMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount > 1) e.Handled = true;
+    }
     private void ResultsDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (ItemsControl.ContainerFromElement(ResultsGrid, e.OriginalSource as DependencyObject) is DataGridRow row)

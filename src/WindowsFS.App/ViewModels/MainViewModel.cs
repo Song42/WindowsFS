@@ -87,6 +87,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private IReadOnlyList<BreadcrumbItem> _breadcrumbItems = [];
     private SpaceMapLayout _mapLayout = SpaceMapLayout.Blocks;
     private ResultRow? _selectedRow;
+    private ResultRow? _currentFolderRow;
+    private ResultRow? DetailRow => _view == "types" ? null : _selectedRow ?? _currentFolderRow;
     private SystemItemInfo? _systemInfo;
     private bool _systemInfoDismissed;
     private readonly ItemDetailsReader? _detailsReader;
@@ -94,11 +96,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private IReadOnlyList<DetailField> _details = [];
     public IReadOnlyList<DetailField> Details => _details;
     public string PreviewText { get; private set; } = "";
-    public bool HasDetails => _selectedRow is { Path.Length: > 0 } && _view != "types";
+    public bool HasDetails => DetailRow is { Path.Length: > 0 };
     public bool HasDetailPanel => (HasDetails || CanShowSystemInfo) && !_systemInfoDismissed;
     public bool CanShowDetails => HasDetails || CanShowSystemInfo;
     private bool _previewBusy;
-    public bool CanPreview => HasDetails && ItemDetailsReader.SupportsPreview(_selectedRow!);
+    public bool CanPreview => HasDetails && ItemDetailsReader.SupportsPreview(DetailRow!);
     public ICommand PreviewCommand { get; }
 
     public MainViewModel() : this(new DiskScanner(), new FileScanResultStore(Path.Combine(
@@ -324,6 +326,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _resultScope = TargetLabel;
         Changed(nameof(ResultScope));
         _folders.Clear(); _parents.Clear(); _folderPath = null;
+        _currentFolderRow = null;
+        SelectedRow = null;
         RefreshBreadcrumbs(); Changed(nameof(Breadcrumb));
         Rows = []; MapItems = [];
         _bytes = _files = _folderCount = _skipped = 0; _elapsed = TimeSpan.Zero;
@@ -584,7 +588,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _detailsCancellation?.Cancel();
         _detailsCancellation?.Dispose();
         var cancellation = _detailsCancellation = new CancellationTokenSource();
-        var row = HasDetails ? _selectedRow : null;
+        var row = HasDetails ? DetailRow : null;
         _previewBusy = false;
         PreviewText = row is null ? "" : CanPreview ? "텍스트 미리보기 · 최대 64 KB · UTF-8/BOM" : "텍스트 미리보기 미지원 형식";
         Changed(nameof(PreviewText));
@@ -604,7 +608,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         try
         {
             var live = await _detailsReader.RunAsync(() => _detailsReader.ReadMetadata(row), cancellation.Token);
-            if (cancellation.IsCancellationRequested || !ReferenceEquals(row, _selectedRow)) return;
+            if (cancellation.IsCancellationRequested || !ReferenceEquals(row, DetailRow)) return;
             _details = fields.Concat(live).ToArray(); Changed(nameof(Details));
         }
         catch (OperationCanceledException) { }
@@ -613,20 +617,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private async Task LoadPreviewAsync()
     {
         if (!CanPreview || _previewBusy || _detailsReader is null || _detailsCancellation is null) return;
-        var row = _selectedRow!;
+        var row = DetailRow!;
         var token = _detailsCancellation.Token;
         _previewBusy = true; CommandManager.InvalidateRequerySuggested();
         PreviewText = "미리보기 읽는 중"; Changed(nameof(PreviewText));
         try
         {
             var preview = await _detailsReader.RunAsync(() => _detailsReader.ReadPreview(row), token);
-            if (token.IsCancellationRequested || !ReferenceEquals(row, _selectedRow)) return;
+            if (token.IsCancellationRequested || !ReferenceEquals(row, DetailRow)) return;
             PreviewText = preview; Changed(nameof(PreviewText));
         }
         catch (OperationCanceledException) { }
         finally
         {
-            if (ReferenceEquals(row, _selectedRow)) { _previewBusy = false; CommandManager.InvalidateRequerySuggested(); }
+            if (ReferenceEquals(row, DetailRow)) { _previewBusy = false; CommandManager.InvalidateRequerySuggested(); }
         }
     }
 
@@ -650,6 +654,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void RefreshRows()
     {
+        _currentFolderRow = _view == "folders" && _result is not null && _folderPath is not null &&
+            _folders.TryGetValue(_folderPath, out var folder)
+            ? new ResultRow(folder.Name, folder.Path, folder.TotalBytes, folder.FileCount, true, "폴더", Share(folder.TotalBytes))
+            : null;
         SelectedRow = null;
         if (_result is null) { Rows = []; return; }
         IEnumerable<ResultRow> rows = _view switch
