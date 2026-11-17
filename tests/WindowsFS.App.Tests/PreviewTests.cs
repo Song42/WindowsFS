@@ -48,6 +48,9 @@ internal static partial class Program
         Check(!Pixel(first.Image).SequenceEqual(Pixel(second.Image!)), "PDF navigation returned the same page twice.");
         var last = await reader.ReadAsync(PreviewRow(pdf), int.MaxValue, CancellationToken.None);
         Equal(1, last.PageIndex);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        Check(!Pixel(first.Image).SequenceEqual(Pixel(second.Image!)), "Rendered pages retained disposed decoder streams.");
         Check(before.SequenceEqual(CapturePickerTree(fixture.Root)), "Image or PDF preview changed the source files.");
     }
 

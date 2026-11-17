@@ -159,7 +159,16 @@ public sealed class FilePreviewReader : IFilePreviewReader
 
     private static async Task<FilePreview> ReadPdfAsync(MemoryStream memory, int pageIndex, CancellationToken token)
     {
-        using var input = memory.AsRandomAccessStream();
+        // Native PDF objects may outlive the async call until COM finalization. A native memory
+        // stream avoids retaining callbacks into a disposed managed Stream during that cleanup.
+        using var input = new InMemoryRandomAccessStream();
+        using (var writer = new DataWriter(input))
+        {
+            writer.WriteBytes(memory.ToArray());
+            await writer.StoreAsync().AsTask(token).ConfigureAwait(false);
+            writer.DetachStream();
+        }
+        input.Seek(0);
         var pdf = await PdfDocument.LoadFromStreamAsync(input).AsTask(token).ConfigureAwait(false);
         if (pdf.PageCount == 0) return new FilePreview("빈 PDF");
         var index = (uint)Math.Clamp(pageIndex, 0, checked((int)pdf.PageCount) - 1);
