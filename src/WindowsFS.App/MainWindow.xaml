@@ -146,12 +146,12 @@
           </Grid>
         </StackPanel>
         <Grid x:Name="AnalysisResults" Grid.Row="3">
-          <Grid Visibility="{Binding ShowStandardResults, Converter={StaticResource Visible}}">
+          <Grid Visibility="{Binding HasResult, Converter={StaticResource Visible}}">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
               <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <StackPanel Margin="0,0,0,8">
+            <StackPanel Margin="0,0,0,8" Visibility="{Binding ShowStandardResults, Converter={StaticResource Visible}}">
               <TextBlock Text="{Binding ResultScope}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ResultScope}" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,0,0,4" />
               <TextBlock Text="{Binding SnapshotDescription}" TextTrimming="CharacterEllipsis" ToolTip="{Binding SnapshotDescription}" Foreground="{StaticResource Accent}" FontSize="10" />
               <DockPanel Visibility="{Binding ShowFolderNavigation, Converter={StaticResource Visible}}" Margin="0,6,0,0">
@@ -194,6 +194,7 @@
                       <Binding ElementName="ResultColumns" Path="ActualWidth" />
                       <Binding Path="MapPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
                       <Binding Path="DetailsPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
+                      <Binding Path="IsCleanup" />
                     </MultiBinding>
                   </ColumnDefinition.Width>
                 </ColumnDefinition>
@@ -206,6 +207,7 @@
                       <Binding ElementName="ResultColumns" Path="ActualWidth" />
                       <Binding Path="MapPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
                       <Binding Path="DetailsPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
+                      <Binding Path="IsCleanup" />
                     </MultiBinding>
                   </ColumnDefinition.Width>
                 </ColumnDefinition>
@@ -218,6 +220,7 @@
                     <Binding ElementName="ResultColumns" Path="ActualWidth" />
                     <Binding Path="MapPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
                     <Binding Path="DetailsPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
+                    <Binding Path="IsCleanup" />
                   </MultiBinding>
                 </Border.Visibility>
                 <Grid>
@@ -259,7 +262,7 @@
                   </ControlTemplate>
                 </Thumb.Template>
               </Thumb>
-              <Border Grid.Column="1" Style="{StaticResource Card}" Padding="0" ClipToBounds="True">
+              <Border Grid.Column="1" Style="{StaticResource Card}" Padding="0" ClipToBounds="True" Visibility="{Binding ShowStandardResults, Converter={StaticResource Visible}}">
                 <Grid>
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -337,6 +340,18 @@
                   </Border>
                 </Grid>
               </Border>
+              <ContentControl x:Name="CleanupAnalysis" Grid.Column="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Visibility="{Binding ShowCleanupResults, Converter={StaticResource Visible}}">
+                <ContentControl.Style>
+                  <Style TargetType="ContentControl">
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding ShowCleanupResults}" Value="True">
+                        <Setter Property="Content" Value="{Binding Cleanup}" />
+                        <Setter Property="ContentTemplate"><Setter.Value><DataTemplate><controls:CleanupAnalysisView /></DataTemplate></Setter.Value></Setter>
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </ContentControl.Style>
+              </ContentControl>
               <Thumb x:Name="DetailsResizeHandle" Grid.Column="2" HorizontalAlignment="Left" Width="16" Cursor="SizeWE" Focusable="True" Template="{Binding Template, ElementName=MapResizeHandle}" DragStarted="PanelResizeStarted" DragCompleted="PanelResizeCompleted" DragDelta="DetailsResizeDragDelta" KeyDown="DetailsResizeKeyDown" ToolTip="세부정보 너비" AutomationProperties.Name="세부정보 너비 조절" Visibility="{Binding HasDetailPanel, Converter={StaticResource Visible}}" />
               <Border x:Name="SystemInfoPanel" Grid.Column="2" Style="{StaticResource Card}" Margin="16,0,0,0" Padding="18" Visibility="{Binding HasDetailPanel, Converter={StaticResource Visible}}">
                 <Grid>
@@ -445,18 +460,6 @@
               </Border>
             </Grid>
           </Grid>
-          <ContentControl x:Name="CleanupAnalysis" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Visibility="{Binding ShowCleanupResults, Converter={StaticResource Visible}}">
-            <ContentControl.Style>
-              <Style TargetType="ContentControl">
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding ShowCleanupResults}" Value="True">
-                    <Setter Property="Content" Value="{Binding Cleanup}" />
-                    <Setter Property="ContentTemplate"><Setter.Value><DataTemplate><controls:CleanupAnalysisView /></DataTemplate></Setter.Value></Setter>
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </ContentControl.Style>
-          </ContentControl>
           <Border Style="{StaticResource Card}" Visibility="{Binding ShowEmpty, Converter={StaticResource Visible}}" Background="#171A22">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
               <TextBlock Text="분석 결과 없음" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />

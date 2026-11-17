@@ -84,6 +84,18 @@ public sealed class CleanupViewModel : INotifyPropertyChanged
     public bool HasSelection => SelectedBucket is not null;
     public bool NoGroups => !IsLoading && Groups.Count == 0;
     public IReadOnlyList<CleanupFileRow> Files { get; private set; } = [];
+    private CleanupFileRow? _selectedFile;
+    public CleanupFileRow? SelectedFile
+    {
+        get => _selectedFile;
+        set
+        {
+            if (value is not null && !Files.Any(file => ReferenceEquals(file, value))) return;
+            _selectedFile = value; Changed();
+            FileSelectionChanged?.Invoke(value?.File);
+        }
+    }
+    public event Action<FileRecord?>? FileSelectionChanged;
     public bool FilesLoading { get; private set; }
     public string FilesStatus { get; private set; } = "";
     public bool NoFiles => HasSelection && !FilesLoading && Files.Count == 0;
@@ -137,6 +149,7 @@ public sealed class CleanupViewModel : INotifyPropertyChanged
     {
         _filesCancellation?.Cancel(); _filesCancellation?.Dispose();
         _filesCancellation = null; _filesLoad = Task.CompletedTask; Files = []; FilesStatus = ""; FilesLoading = false;
+        SelectedFile = null;
         if (SelectedBucket is { } selection && _filesReader is not null)
         {
             if (!force && _fileCache.TryGetValue(selection.Bucket, out var cached)) SetFiles(selection.Bucket, cached);

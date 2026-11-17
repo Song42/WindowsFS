@@ -11,6 +11,12 @@ namespace WindowsFS.App.Controls;
 public partial class CleanupAnalysisView : UserControl
 {
     public CleanupAnalysisView() => InitializeComponent();
+    private void FileMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (ItemsControl.ContainerFromElement(CleanupFiles, e.OriginalSource as DependencyObject) is DataGridRow
+            { IsSelected: true, Item: CleanupFileRow row } && DataContext is CleanupViewModel vm)
+            vm.SelectedFile = row;
+    }
     private double? _dragX;
     private double _dragWidth;
     private void SidebarDragStarted(object sender, DragStartedEventArgs e)

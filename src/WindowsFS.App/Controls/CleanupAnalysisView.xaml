@@ -84,7 +84,7 @@
                 <TextBlock Text="{Binding FilesStatus}" Foreground="{StaticResource Muted}" FontSize="10" TextWrapping="Wrap" />
                 <ProgressBar Height="2" IsIndeterminate="True" Visibility="{Binding FilesLoading, Converter={StaticResource Visible}}" Margin="0,4,0,0" />
               </StackPanel>
-              <DataGrid x:Name="CleanupFiles" Grid.Row="2" ItemsSource="{Binding Files}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" EnableRowVirtualization="True" VirtualizingPanel.VirtualizationMode="Recycling">
+              <DataGrid x:Name="CleanupFiles" Grid.Row="2" ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile, Mode=TwoWay}" PreviewMouseLeftButtonDown="FileMouseDown" ScrollViewer.HorizontalScrollBarVisibility="Disabled" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" EnableRowVirtualization="True" VirtualizingPanel.VirtualizationMode="Recycling">
                 <DataGrid.Columns>
                   <DataGridTextColumn Header="이름" Binding="{Binding Name}" Width="2*" />
                   <DataGridTextColumn Header="크기" Binding="{Binding Size}" SortMemberPath="Bytes" Width="90" />

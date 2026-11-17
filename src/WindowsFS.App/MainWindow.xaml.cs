@@ -126,8 +126,8 @@ public partial class MainWindow : Window
     }
     private void SetDetailsWidth(double width)
     {
-        if (!double.IsFinite(width) || DataContext is not MainViewModel { HasDetailPanel: true }) return;
-        var reserved = SpaceMapVisibilityConverter.MinimumListWidth + 16 + SpaceMapVisibilityConverter.ResizeSlack +
+        if (!double.IsFinite(width) || DataContext is not MainViewModel { HasDetailPanel: true } vm) return;
+        var reserved = (vm.IsCleanup ? SpaceMapVisibilityConverter.MinimumCleanupWidth : SpaceMapVisibilityConverter.MinimumListWidth) + 16 + SpaceMapVisibilityConverter.ResizeSlack +
             (SpaceMapPanel.Visibility == Visibility.Visible ? MapPanelWidth + 16 : 0);
         var minimum = SpaceMapVisibilityConverter.SystemPanelColumnWidth - 16;
         var maximum = Math.Max(minimum, Math.Floor(ResultColumns.ActualWidth - reserved));

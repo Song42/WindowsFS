@@ -43,6 +43,8 @@ internal static partial class Program
             ("Cleanup file metadata stays within saved locations and never changes source files", CleanupFileMetadata),
             ("Cleanup candidates, cached file lists, refresh and cancellation preserve scope", CleanupFileState),
             ("Cleanup filters and file list remain usable with a resizable sidebar", CleanupFilesLayout),
+            ("Cleanup file selection shares details, previews and resizing without source changes", CleanupFileDetails),
+            ("Cleanup preview pages, media and stale selection use the shared detail lifecycle", CleanupPreviewLifecycle),
             ("MediaInfo reads native audio and video tracks without source changes", NativeMediaInfo),
             ("MediaInfo rejects external references and observes cancellation", MediaInfoBoundaries),
             ("MediaInfo preserves section state, reads once and rejects stale selection results", MediaInfoSelection),

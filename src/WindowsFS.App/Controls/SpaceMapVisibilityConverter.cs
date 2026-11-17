@@ -11,6 +11,7 @@ public sealed class SpaceMapVisibilityConverter : IMultiValueConverter
     public const double MinimumMapWidth = 280;
     public const double MaximumMapWidth = 960;
     public const double MinimumListWidth = 480;
+    public const double MinimumCleanupWidth = 680;
     public const double SystemPanelColumnWidth = 326 + 16;
     public const double ResizeSlack = 4;
 
@@ -21,13 +22,14 @@ public sealed class SpaceMapVisibilityConverter : IMultiValueConverter
         var columnWidth = mapWidth + 16;
         var width = values.Length >= 3 && values[2] is double available && double.IsFinite(available) ? available : 0;
         var hasDetails = values.Length >= 2 && values[1] is true;
+        var minimumList = values.Length >= 6 && values[5] is true ? MinimumCleanupWidth : MinimumListWidth;
         var customDetails = values.Length >= 5 && values[4] is double preferred && double.IsFinite(preferred)
             ? Math.Max(SystemPanelColumnWidth, preferred + 16) : double.NaN;
         var reservedDetails = hasDetails ? double.IsFinite(customDetails) ? customDetails : SystemPanelColumnWidth : 0;
         var visible = values.Length > 0 && values[0] is true &&
-            width >= columnWidth + MinimumListWidth + reservedDetails + ResizeSlack;
+            width >= columnWidth + minimumList + reservedDetails + ResizeSlack;
         var remaining = Math.Max(0, width - (visible ? columnWidth : 0));
-        var details = hasDetails ? Math.Min(Math.Max(0, remaining - MinimumListWidth),
+        var details = hasDetails ? Math.Min(Math.Max(0, remaining - minimumList),
             double.IsFinite(customDetails) ? customDetails : Math.Max(SystemPanelColumnWidth, remaining / 2.4)) : 0;
         return (parameter as string) switch
         {

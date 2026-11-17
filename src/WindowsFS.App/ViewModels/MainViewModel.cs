@@ -92,6 +92,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private IReadOnlyList<BreadcrumbItem> _breadcrumbItems = [];
     private SpaceMapLayout _mapLayout = SpaceMapLayout.Blocks;
     private ResultRow? _selectedRow;
+    private FileRecord? _cleanupFile;
+    private ResultRow? _cleanupDetailRow;
     private ResultRow? _currentFolderRow;
     private ResultRow? _parentFolderRow;
     private readonly IReadOnlyFileBrowser? _fileBrowser;
@@ -99,7 +101,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private CancellationTokenSource? _fileListCancellation;
     private Task _fileListTask = Task.CompletedTask;
     private string _fileListStatus = "";
-    private ResultRow? DetailRow => _view == "types" ? null : _selectedRow?.Navigation switch
+    private ResultRow? DetailRow => IsCleanup ? _cleanupDetailRow : _view == "types" ? null : _selectedRow?.Navigation switch
     {
         FolderNavigationKind.Current => _currentFolderRow,
         FolderNavigationKind.Parent => _parentFolderRow,
@@ -170,6 +172,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _scanner = scanner;
         Cleanup = new CleanupViewModel(cleanupReader, path => NavigateMap(new MapItem("", "", 0, path, true)),
             fileBrowser is null ? null : new CleanupFilesReader(fileBrowser));
+        Cleanup.FileSelectionChanged += SelectCleanupFile;
         _detailsReader = detailsReader;
         _fileBrowser = fileBrowser;
         _previewReader = previewReader ?? new FilePreviewReader();
@@ -642,6 +645,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Changed(nameof(BreadcrumbItems));
     }
 
+    private void SelectCleanupFile(FileRecord? file)
+    {
+        if (ReferenceEquals(_cleanupFile, file))
+        {
+            if (IsCleanup) { _systemInfoDismissed = false; NotifySystemInfo(); }
+            return;
+        }
+        _cleanupFile = file;
+        _cleanupDetailRow = file is null ? null : new ResultRow(file.Name, file.Path, file.Size, -1, false,
+            string.IsNullOrEmpty(file.Extension) ? "파일" : file.Extension, Share(file.Size)) { IsLiveMetadata = true };
+        if (!IsCleanup) return;
+        UpdateSystemInfo();
+        _ = LoadDetailsAsync();
+    }
+
     private void UpdateSystemInfo()
     {
         // Descriptions are an exact-path catalog lookup; selecting an item never opens its contents.
@@ -683,7 +701,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             fields.Add(new("전체 경로", row.Path));
             fields.Add(new("상위 폴더", Path.GetDirectoryName(row.Path) ?? row.Path));
             fields.Add(new("종류", row.IsDirectory ? "폴더" : row.Kind));
-            fields.Add(new(row.IsLiveMetadata ? "폴더를 연 시점 크기 · 논리적" : "분석 당시 크기 · 논리적", $"{row.Size} ({row.Bytes:N0} B)"));
+            fields.Add(new(row.IsLiveMetadata ? IsCleanup ? "목록 조회 시점 크기 · 논리적" : "폴더를 연 시점 크기 · 논리적" : "분석 당시 크기 · 논리적", $"{row.Size} ({row.Bytes:N0} B)"));
             fields.Add(new("전체 분석 대비", row.ShareText));
             if (row.IsDirectory) fields.Add(new("포함 파일 · 분석 당시", row.CountText));
         }
