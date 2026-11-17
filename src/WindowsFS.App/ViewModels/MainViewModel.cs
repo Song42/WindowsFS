@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
 using WindowsFS.App.Controls;
+using WindowsFS.App.Services;
 using WindowsFS.Core;
 using WindowsFS.Core.Persistence;
 using WindowsFS.Core.SystemItems;
@@ -88,15 +89,28 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private ResultRow? _selectedRow;
     private SystemItemInfo? _systemInfo;
     private bool _systemInfoDismissed;
+    private readonly ItemDetailsReader? _detailsReader;
+    private CancellationTokenSource? _detailsCancellation;
+    private IReadOnlyList<DetailField> _details = [];
+    public IReadOnlyList<DetailField> Details => _details;
+    public string PreviewText { get; private set; } = "";
+    public bool HasDetails => _selectedRow is { Path.Length: > 0 } && _view != "types";
+    public bool HasDetailPanel => (HasDetails || CanShowSystemInfo) && !_systemInfoDismissed;
+    public bool CanShowDetails => HasDetails || CanShowSystemInfo;
+    private bool _previewBusy;
+    public bool CanPreview => HasDetails && ItemDetailsReader.SupportsPreview(_selectedRow!);
+    public ICommand PreviewCommand { get; }
 
     public MainViewModel() : this(new DiskScanner(), new FileScanResultStore(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "WindowsFS", "Cache", "latest.scan.json.gz"))) { }
+        "WindowsFS", "Cache", "latest.scan.json.gz")), detailsReader: new ItemDetailsReader()) { }
 
     // Injected scanners use an explicit store so tests and alternative hosts never write a user's cache implicitly.
-    public MainViewModel(IDiskScanner scanner, IScanResultStore? store = null, SystemItemCatalog? systemCatalog = null)
+    public MainViewModel(IDiskScanner scanner, IScanResultStore? store = null, SystemItemCatalog? systemCatalog = null, ItemDetailsReader? detailsReader = null)
     {
         _scanner = scanner;
+        _detailsReader = detailsReader;
+        PreviewCommand = new RelayCommand(async _ => await LoadPreviewAsync(), _ => CanPreview && !_previewBusy);
         _store = store;
         _systemCatalog = systemCatalog ?? new SystemItemCatalog();
         ScanCommand = new RelayCommand(async _ => await ScanAsync(), _ => IsIdle && _drivesLoaded && (_selectedPath is not null || Drives.Count > 0));
@@ -122,7 +136,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         UpCommand = new RelayCommand(_ => { _folderPath = _folderPath is not null && _parents.TryGetValue(_folderPath, out var parent) ? parent : null; RefreshView(); }, _ => _folderPath is not null);
         HomeCommand = new RelayCommand(_ => { _folderPath = null; RefreshView(); });
         DismissSystemInfoCommand = new RelayCommand(_ => { _systemInfoDismissed = true; NotifySystemInfo(); });
-        ShowSystemInfoCommand = new RelayCommand(_ => { _systemInfoDismissed = false; NotifySystemInfo(); }, _ => CanShowSystemInfo);
+        ShowSystemInfoCommand = new RelayCommand(_ => { _systemInfoDismissed = false; NotifySystemInfo(); }, _ => CanShowSystemInfo || HasDetails);
         OpenSystemHelpCommand = new RelayCommand(_ => OpenSystemHelp(), _ => CanShowSystemInfo);
     }
 
@@ -221,6 +235,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _selectedRow = value;
             Changed();
             UpdateSystemInfo();
+            _ = LoadDetailsAsync();
             CommandManager.InvalidateRequerySuggested();
         }
     }
@@ -559,7 +574,60 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         Changed(nameof(SystemInfo)); Changed(nameof(CanShowSystemInfo));
         Changed(nameof(HasSystemInfo)); Changed(nameof(IsMapVisible));
+        Changed(nameof(HasDetails)); Changed(nameof(HasDetailPanel)); Changed(nameof(CanPreview));
+        Changed(nameof(CanShowDetails));
         CommandManager.InvalidateRequerySuggested();
+    }
+
+    private async Task LoadDetailsAsync()
+    {
+        _detailsCancellation?.Cancel();
+        _detailsCancellation?.Dispose();
+        var cancellation = _detailsCancellation = new CancellationTokenSource();
+        var row = HasDetails ? _selectedRow : null;
+        _previewBusy = false;
+        PreviewText = row is null ? "" : CanPreview ? "텍스트 미리보기 · 최대 64 KB · UTF-8/BOM" : "텍스트 미리보기 미지원 형식";
+        Changed(nameof(PreviewText));
+        var fields = new List<DetailField>();
+        if (row is not null)
+        {
+            fields.Add(new("이름", row.Name));
+            fields.Add(new("전체 경로", row.Path));
+            fields.Add(new("상위 폴더", Path.GetDirectoryName(row.Path) ?? row.Path));
+            fields.Add(new("종류", row.IsDirectory ? "폴더" : row.Kind));
+            fields.Add(new("분석 당시 크기 · 논리적", $"{row.Size} ({row.Bytes:N0} B)"));
+            fields.Add(new("전체 분석 대비", row.ShareText));
+            if (row.IsDirectory) fields.Add(new("포함 파일 · 분석 당시", row.CountText));
+        }
+        _details = fields.ToArray(); Changed(nameof(Details));
+        if (row is null || _detailsReader is null) return;
+        try
+        {
+            var live = await _detailsReader.RunAsync(() => _detailsReader.ReadMetadata(row), cancellation.Token);
+            if (cancellation.IsCancellationRequested || !ReferenceEquals(row, _selectedRow)) return;
+            _details = fields.Concat(live).ToArray(); Changed(nameof(Details));
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task LoadPreviewAsync()
+    {
+        if (!CanPreview || _previewBusy || _detailsReader is null || _detailsCancellation is null) return;
+        var row = _selectedRow!;
+        var token = _detailsCancellation.Token;
+        _previewBusy = true; CommandManager.InvalidateRequerySuggested();
+        PreviewText = "미리보기 읽는 중"; Changed(nameof(PreviewText));
+        try
+        {
+            var preview = await _detailsReader.RunAsync(() => _detailsReader.ReadPreview(row), token);
+            if (token.IsCancellationRequested || !ReferenceEquals(row, _selectedRow)) return;
+            PreviewText = preview; Changed(nameof(PreviewText));
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (ReferenceEquals(row, _selectedRow)) { _previewBusy = false; CommandManager.InvalidateRequerySuggested(); }
+        }
     }
 
     private void OpenSystemHelp()

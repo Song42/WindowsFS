@@ -37,6 +37,7 @@ internal static class Program
         };
         var tests = new (string Name, Func<Task> Run)[]
         {
+            ("Details and bounded text previews leave synthetic files unchanged", FileDetails),
             ("Actual XAML realizes a full-width dashboard and read-only result bindings", XamlSmoke),
             ("Dashboard cards and return navigation retain saved analysis without scanning", DashboardNavigation),
             ("Page headings remain aligned and hide duplicate titles and saved-status footer", RefinedPageHeadings),
@@ -1655,10 +1656,42 @@ internal static class Program
 
             vm.SelectedRow = vm.Rows.Single(row => row.Path.EndsWith("report.docx", StringComparison.Ordinal));
             Render(content);
-            Equal(Visibility.Collapsed, panel!.Visibility);
+            Equal(Visibility.Visible, panel!.Visibility);
+            Check(vm.HasDetails && !vm.HasSystemInfo && vm.Details.Any(field => field.Value == vm.SelectedRow.Path), "A normal file lost its own details.");
+            vm.DismissSystemInfoCommand.Execute(null);
+            Render(content);
+            Equal(Visibility.Collapsed, panel.Visibility);
+            vm.ShowSystemInfoCommand.Execute(null);
+            Render(content);
+            Equal(Visibility.Visible, panel.Visibility);
             Check(!window.IsVisible, "The explanation test must not open a desktop window.");
         }
         finally { window.Close(); }
+    }
+
+    private static async Task FileDetails()
+    {
+        using var fixture = new PickerFixture();
+        var path = Path.Combine(fixture.Root, "sample.txt");
+        var original = "sample preview\n" + new string('a', 80000);
+        File.WriteAllText(path, original);
+        var modified = File.GetLastWriteTimeUtc(path);
+        var row = new ResultRow("sample.txt", path, 12, -1, false, ".txt", 10);
+        var reader = new ItemDetailsReader();
+        var fields = await reader.RunAsync(() => reader.ReadMetadata(row), CancellationToken.None);
+        Check(fields.Any(field => field.Label.Contains("현재 크기") && field.Value != "12 B"), "Live metadata did not reflect the current size.");
+        var preview = await reader.RunAsync(() => reader.ReadPreview(row), CancellationToken.None);
+        Check(preview.StartsWith("sample preview") && preview.EndsWith("[앞부분 64 KB]") && preview.Length < 66000, "The preview was not bounded.");
+        Equal(original, File.ReadAllText(path));
+        Equal(modified, File.GetLastWriteTimeUtc(path));
+        Check(!ItemDetailsReader.SupportsPreview(row with { Path = Path.Combine(fixture.Root, "sample.exe") }), "Executable preview was enabled.");
+        Check(reader.ReadMetadata(row with { Path = Path.Combine(fixture.Root, "missing.txt") }).Any(field => field.Label == "현재 상태"), "Missing metadata did not produce a status.");
+        using var canceled = new CancellationTokenSource();
+        canceled.Cancel();
+        var invoked = false;
+        try { await reader.RunAsync(() => invoked = true, canceled.Token); }
+        catch (OperationCanceledException) { }
+        Check(!invoked, "A canceled details read still accessed the filesystem.");
     }
 
     private static MainViewModel CreateSystemViewModel()

@@ -6,7 +6,7 @@
     <AssemblyName>WindowsFS</AssemblyName>
     <RootNamespace>WindowsFS.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.6.2</Version>
+    <Version>0.7.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../WindowsFS.Core/WindowsFS.Core.csproj" />

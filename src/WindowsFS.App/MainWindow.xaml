@@ -184,7 +184,7 @@
                   <ColumnDefinition.Width>
                     <MultiBinding Converter="{StaticResource SpaceMapVisibility}" ConverterParameter="Width">
                       <Binding Path="IsMapVisible" />
-                      <Binding Path="HasSystemInfo" />
+                      <Binding Path="HasDetailPanel" />
                       <Binding ElementName="ResultColumns" Path="ActualWidth" />
                     </MultiBinding>
                   </ColumnDefinition.Width>
@@ -196,7 +196,7 @@
                 <Border.Visibility>
                   <MultiBinding Converter="{StaticResource SpaceMapVisibility}">
                     <Binding Path="IsMapVisible" />
-                    <Binding Path="HasSystemInfo" />
+                    <Binding Path="HasDetailPanel" />
                     <Binding ElementName="ResultColumns" Path="ActualWidth" />
                   </MultiBinding>
                 </Border.Visibility>
@@ -297,14 +297,14 @@
                   </Grid>
                   <Border Grid.Row="3" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="12,10">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                      <Button Content="시스템 설명" Command="{Binding ShowSystemInfoCommand}" Visibility="{Binding CanShowSystemInfo, Converter={StaticResource Visible}}" Padding="11,7" FontSize="11" Margin="0,0,8,0" />
+                      <Button Content="세부정보" Command="{Binding ShowSystemInfoCommand}" Visibility="{Binding CanShowDetails, Converter={StaticResource Visible}}" Padding="11,7" FontSize="11" Margin="0,0,8,0" />
                       <Button Content="경로 복사" Command="{Binding CopyPathCommand}" Padding="11,7" FontSize="11" Margin="0,0,8,0" />
                       <Button Content="탐색기에서 보기 ↗" Command="{Binding RevealCommand}" Padding="11,7" FontSize="11" />
                     </StackPanel>
                   </Border>
                 </Grid>
               </Border>
-              <Border x:Name="SystemInfoPanel" Grid.Column="2" Style="{StaticResource Card}" Width="326" Margin="16,0,0,0" Padding="18" Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}">
+              <Border x:Name="SystemInfoPanel" Grid.Column="2" Style="{StaticResource Card}" Width="326" Margin="16,0,0,0" Padding="18" Visibility="{Binding HasDetailPanel, Converter={StaticResource Visible}}">
                 <Grid>
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -313,12 +313,27 @@
                   </Grid.RowDefinitions>
                   <Grid Margin="0,0,0,15">
                     <StackPanel>
-                      <TextBlock Text="시스템 항목" FontSize="17" FontWeight="SemiBold" />
+                      <TextBlock Text="세부정보" FontSize="17" FontWeight="SemiBold" />
                     </StackPanel>
-                    <Button Content="✕" Command="{Binding DismissSystemInfoCommand}" HorizontalAlignment="Right" VerticalAlignment="Top" Padding="7,3" Background="Transparent" BorderThickness="0" AutomationProperties.Name="시스템 설명 닫기" />
+                    <Button Content="✕" Command="{Binding DismissSystemInfoCommand}" HorizontalAlignment="Right" VerticalAlignment="Top" Padding="7,3" Background="Transparent" BorderThickness="0" AutomationProperties.Name="세부정보 닫기" />
                   </Grid>
                   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,0,8,0">
+                      <StackPanel Visibility="{Binding HasDetails, Converter={StaticResource Visible}}">
+                        <ItemsControl ItemsSource="{Binding Details}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                              <StackPanel Margin="0,0,0,13">
+                                <TextBlock Text="{Binding Label}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,0,0,4" />
+                                <TextBlock Text="{Binding Value}" TextWrapping="Wrap" FontSize="12" />
+                              </StackPanel>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Content="텍스트 미리보기" Command="{Binding PreviewCommand}" Visibility="{Binding CanPreview, Converter={StaticResource Visible}}" Padding="10,7" Margin="0,0,0,8" />
+                        <TextBox Text="{Binding PreviewText, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="260" VerticalScrollBarVisibility="Auto" FontSize="11" Margin="0,0,0,18" />
+                      </StackPanel>
+                      <StackPanel Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}">
                       <TextBlock Text="{Binding SystemInfo.Title}" TextWrapping="Wrap" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
                       <TextBlock Text="용도" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,18,0,5" />
                       <TextBlock Text="{Binding SystemInfo.Purpose}" TextWrapping="Wrap" FontSize="12" LineHeight="20" />
@@ -331,9 +346,10 @@
                       <Border Background="#252333" CornerRadius="7" Padding="10" Margin="0,18,0,0">
                         <TextBlock Text="{Binding SystemInfo.MatchBasis}" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="10" LineHeight="17" />
                       </Border>
+                      </StackPanel>
                     </StackPanel>
                   </ScrollViewer>
-                  <Button Grid.Row="2" Content="Microsoft 문서 ↗" Command="{Binding OpenSystemHelpCommand}" Margin="0,15,0,0" Padding="12,9" FontSize="11" />
+                  <Button Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}" Grid.Row="2" Content="Microsoft 문서 ↗" Command="{Binding OpenSystemHelpCommand}" Margin="0,15,0,0" Padding="12,9" FontSize="11" />
                 </Grid>
               </Border>
             </Grid>
