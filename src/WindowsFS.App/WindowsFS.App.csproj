@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <AssemblyName>WindowsFS</AssemblyName>
     <RootNamespace>WindowsFS.App</RootNamespace>
@@ -9,6 +9,9 @@
     <Version>0.7.1</Version>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="bblanchon.PDFium.Win32" Version="159.0.8152" />
+    <Content Include="../../third-party/pdfium/**/*" Link="third-party/pdfium/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="../WindowsFS.Core/WindowsFS.Core.csproj" />
   </ItemGroup>
 </Project>

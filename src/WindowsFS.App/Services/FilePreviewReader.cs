@@ -1,8 +1,6 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Media.Imaging;
-using Windows.Data.Pdf;
-using Windows.Storage.Streams;
 using WindowsFS.App.ViewModels;
 using WindowsFS.Core;
 
@@ -89,12 +87,13 @@ public sealed class FilePreviewReader : IFilePreviewReader
                     return kind switch
                     {
                         PreviewKind.Image => new FilePreview(Image: DecodeImage(memory)),
-                        PreviewKind.Pdf => await ReadPdfAsync(memory, pageIndex, token).ConfigureAwait(false),
+                        PreviewKind.Pdf => PdfPreview.Read(memory, pageIndex, token),
                         _ => new FilePreview(DocumentPreview.Read(memory, Path.GetExtension(row.Path), token))
                     };
                 }
                 catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException or
-                    System.Security.SecurityException or COMException or System.Xml.XmlException or FileFormatException or InvalidOperationException)
+                    System.Security.SecurityException or COMException or System.Xml.XmlException or FileFormatException or InvalidOperationException or
+                    DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
                 {
                     return new FilePreview(error is PreviewLimitException ? error.Message : "미리보기 불가 · 접근 권한, 암호 또는 파일 형식 확인");
                 }
@@ -155,36 +154,6 @@ public sealed class FilePreviewReader : IFilePreviewReader
         bitmap.EndInit();
         bitmap.Freeze();
         return bitmap;
-    }
-
-    private static async Task<FilePreview> ReadPdfAsync(MemoryStream memory, int pageIndex, CancellationToken token)
-    {
-        // Native PDF objects may outlive the async call until COM finalization. A native memory
-        // stream avoids retaining callbacks into a disposed managed Stream during that cleanup.
-        using var input = new InMemoryRandomAccessStream();
-        using (var writer = new DataWriter(input))
-        {
-            writer.WriteBytes(memory.ToArray());
-            await writer.StoreAsync().AsTask(token).ConfigureAwait(false);
-            writer.DetachStream();
-        }
-        input.Seek(0);
-        var pdf = await PdfDocument.LoadFromStreamAsync(input).AsTask(token).ConfigureAwait(false);
-        if (pdf.PageCount == 0) return new FilePreview("빈 PDF");
-        var index = (uint)Math.Clamp(pageIndex, 0, checked((int)pdf.PageCount) - 1);
-        using var page = pdf.GetPage(index);
-        var size = page.Size;
-        if (size.Width <= 0 || size.Height <= 0) return new FilePreview("PDF 페이지 크기 오류");
-        var scale = Math.Min(1600 / size.Width, 1600 / size.Height);
-        using var output = new InMemoryRandomAccessStream();
-        await page.RenderToStreamAsync(output, new PdfPageRenderOptions
-        {
-            DestinationWidth = (uint)Math.Max(1, size.Width * scale),
-            DestinationHeight = (uint)Math.Max(1, size.Height * scale)
-        }).AsTask(token).ConfigureAwait(false);
-        output.Seek(0);
-        using var rendered = output.AsStreamForRead();
-        return new FilePreview(Image: DecodeImage(rendered), PageIndex: (int)index, PageCount: (int)pdf.PageCount);
     }
 
     private sealed class PreviewLimitException(string message) : IOException(message);

@@ -6,10 +6,7 @@
     <Image x:Name="PreviewImage" Source="{Binding Image}" MaxHeight="480" Stretch="Uniform"
            Visibility="{Binding HasImage, Converter={StaticResource Visible}}" Margin="0,0,0,8" AutomationProperties.Name="이미지·PDF 미리보기" />
     <StackPanel Visibility="{Binding HasVideo, Converter={StaticResource Visible}}">
-      <Border Background="#090A0D" CornerRadius="6">
-        <MediaElement x:Name="VideoPlayer" Height="220" LoadedBehavior="Manual" UnloadedBehavior="Close"
-                      Stretch="Uniform" MediaOpened="VideoOpened" MediaEnded="VideoEnded" MediaFailed="VideoFailed" />
-      </Border>
+      <Border x:Name="VideoHost" Background="#090A0D" CornerRadius="6" Height="220" />
       <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
         <Button x:Name="PlayButton" Content="재생" Click="PlayClick" Padding="10,6" />
         <Button Content="일시정지" Click="PauseClick" Padding="10,6" Margin="6,0,0,0" />

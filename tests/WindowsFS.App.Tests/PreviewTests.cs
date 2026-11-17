@@ -168,11 +168,10 @@ internal static partial class Program
         Equal(video, prepared.VideoPath!);
         Equal(TimeSpan.FromSeconds(30), FilePreviewReader.MaximumVideoDuration);
         var control = new FilePreviewControl { Preview = prepared };
-        var player = (MediaElement)control.FindName("VideoPlayer");
-        Check(player.Source is null && player.LoadedBehavior == MediaState.Manual && player.UnloadedBehavior == MediaState.Close,
-            "Preparing a video automatically opened or played it.");
+        var host = (Border)control.FindName("VideoHost");
+        Check(host.Child is null, "Preparing a video initialized the native media player before explicit playback.");
         control.Preview = new FilePreview("another selection");
-        Check(player.Source is null, "Replacing a preview retained its media source.");
+        Check(host.Child is null, "Replacing a preview retained its media player.");
         Check(before.SequenceEqual(CapturePickerTree(fixture.Root)), "Preview preparation changed the fixtures.");
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();

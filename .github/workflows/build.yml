@@ -28,12 +28,12 @@ jobs:
         run: |
           dotnet build tests/WindowsFS.App.Tests/WindowsFS.App.Tests.csproj --configuration Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet tests/WindowsFS.App.Tests/bin/Release/net10.0-windows10.0.19041.0/WindowsFS.App.Tests.dll
+          dotnet tests/WindowsFS.App.Tests/bin/Release/net10.0-windows/WindowsFS.App.Tests.dll
           $testExitCode = $LASTEXITCODE
           Write-Output "WPF test process exit code: $testExitCode"
           if ($testExitCode -ne 0) {
             foreach ($probe in @('Image and PDF', 'never autoplay video')) {
-              dotnet tests/WindowsFS.App.Tests/bin/Release/net10.0-windows10.0.19041.0/WindowsFS.App.Tests.dll --filter $probe
+              dotnet tests/WindowsFS.App.Tests/bin/Release/net10.0-windows/WindowsFS.App.Tests.dll --filter $probe
               Write-Output "Synthetic preview probe '$probe' exit code: $LASTEXITCODE"
             }
           }
