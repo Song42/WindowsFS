@@ -39,6 +39,8 @@ internal static partial class Program
         {
             ("Details and bounded text previews leave synthetic files unchanged", FileDetails),
             ("Image and PDF previews render bounded pages without source changes", ImageAndPdfPreviews),
+            ("MP3 selection prepares compact audio controls without playback or source changes", AudioPreviews),
+            ("MP3 previews reject playlists, broken frames and oversized inputs", AudioPreviewLimits),
             ("Office, HWPX and OpenDocument previews render formatted pages, tables and images without writes", DocumentPreviews),
             ("Document layout bounds reject expansion and external resources without source writes", DocumentLayoutLimits),
             ("Previews reject malformed, external and oversized content and never autoplay video", PreviewLimits),

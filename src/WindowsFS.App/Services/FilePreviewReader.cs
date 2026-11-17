@@ -6,13 +6,16 @@ using WindowsFS.Core;
 
 namespace WindowsFS.App.Services;
 
-public enum PreviewKind { Unsupported, Text, Image, Video, Pdf, Document }
+public enum PreviewKind { Unsupported, Text, Image, Video, Pdf, Document, Audio }
 
 public sealed record FilePreview(string Text = "", BitmapSource? Image = null, string? VideoPath = null,
-    int PageIndex = 0, int PageCount = 0)
+    int PageIndex = 0, int PageCount = 0, string? AudioPath = null)
 {
     public bool HasImage => Image is not null;
     public bool HasVideo => VideoPath is not null;
+    public bool HasAudio => AudioPath is not null;
+    public bool HasMedia => HasVideo || HasAudio;
+    public string? MediaPath => AudioPath ?? VideoPath;
     public bool HasText => Text.Length > 0;
 }
 
@@ -26,7 +29,7 @@ public sealed class FilePreviewReader : IFilePreviewReader
 {
     public const long MaximumFileBytes = 64 * 1024 * 1024;
     public const long MaximumVideoBytes = 2L * 1024 * 1024 * 1024;
-    public static readonly TimeSpan MaximumVideoDuration = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan MaximumPlaybackDuration = TimeSpan.FromSeconds(30);
     private readonly SemaphoreSlim _gate = new(1);
 
     public static PreviewKind KindFor(ResultRow row)
@@ -36,6 +39,7 @@ public sealed class FilePreviewReader : IFilePreviewReader
         {
             ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".tif" or ".tiff" or ".ico" => PreviewKind.Image,
             ".mp4" or ".m4v" or ".mov" or ".avi" or ".wmv" or ".mkv" or ".webm" => PreviewKind.Video,
+            ".mp3" => PreviewKind.Audio,
             ".pdf" => PreviewKind.Pdf,
             ".docx" or ".docm" or ".xlsx" or ".xlsm" or ".pptx" or ".pptm" or ".hwpx" or ".odt" or ".ods" or ".odp" => PreviewKind.Document,
             _ when ItemDetailsReader.SupportsTextPreview(row) => PreviewKind.Text,
@@ -47,6 +51,7 @@ public sealed class FilePreviewReader : IFilePreviewReader
     {
         PreviewKind.Image => "이미지 · 최대 64 MB · GIF/TIFF 첫 프레임",
         PreviewKind.Video => "영상 · 처음 30초 · 최대 2 GB · Windows 지원 코덱",
+        PreviewKind.Audio => "MP3 오디오 · 처음 30초 · 최대 64 MB",
         PreviewKind.Pdf => "PDF · 페이지 미리보기 · 최대 64 MB",
         PreviewKind.Document => "문서 페이지 · 서식·표·이미지 · 최대 64 MB · 복잡한 배치 일부 제한",
         PreviewKind.Text => "텍스트 · 최대 64 KB · UTF-8/BOM",
@@ -70,6 +75,11 @@ public sealed class FilePreviewReader : IFilePreviewReader
                     {
                         ValidateVideoFile(row.Path);
                         return new FilePreview(Description(row), VideoPath: row.Path);
+                    }
+                    if (kind == PreviewKind.Audio)
+                    {
+                        ValidateAudioFile(row.Path);
+                        return new FilePreview(Description(row), AudioPath: row.Path);
                     }
                     if (kind == PreviewKind.Text) return new FilePreview(new ItemDetailsReader().ReadPreview(row));
                     using var source = OpenRead(row.Path);
@@ -122,6 +132,15 @@ public sealed class FilePreviewReader : IFilePreviewReader
             _ => false
         };
         if (!valid) throw new InvalidDataException("Only video containers are accepted; playlists and web documents are excluded.");
+    }
+
+    public static void ValidateAudioFile(string path)
+    {
+        ValidateLocalFile(path, MaximumFileBytes);
+        if (!Path.GetExtension(path).Equals(".mp3", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Only MP3 audio is supported.");
+        using var stream = OpenRead(path);
+        Mp3Preview.Validate(stream);
     }
 
     public static void ValidateLocalFile(string path, long maximumBytes)

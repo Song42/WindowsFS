@@ -5,14 +5,23 @@
   <StackPanel DataContext="{Binding Preview, RelativeSource={RelativeSource AncestorType=UserControl}}">
     <Image x:Name="PreviewImage" Source="{Binding Image}" MaxHeight="480" Stretch="Uniform"
            Visibility="{Binding HasImage, Converter={StaticResource Visible}}" Margin="0,0,0,8" AutomationProperties.Name="이미지·문서 미리보기" />
-    <StackPanel Visibility="{Binding HasVideo, Converter={StaticResource Visible}}">
-      <Border x:Name="VideoHost" Background="#090A0D" CornerRadius="6" Height="220" />
+    <StackPanel x:Name="MediaControls" Visibility="{Binding HasMedia, Converter={StaticResource Visible}}">
+      <Border x:Name="MediaHost" Background="#090A0D" CornerRadius="6">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Setter Property="Height" Value="220" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding HasVideo}" Value="False"><Setter Property="Height" Value="0" /></DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+      </Border>
       <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
         <Button x:Name="PlayButton" Content="재생" Click="PlayClick" Padding="10,6" />
         <Button Content="일시정지" Click="PauseClick" Padding="10,6" Margin="6,0,0,0" />
         <Button Content="처음" Click="RestartClick" Padding="10,6" Margin="6,0,0,0" />
       </StackPanel>
-      <TextBlock x:Name="VideoStatus" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8" />
+      <TextBlock x:Name="MediaStatus" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8" />
     </StackPanel>
     <TextBox Text="{Binding Text, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="320"
              VerticalScrollBarVisibility="Auto" FontSize="11" Visibility="{Binding HasText, Converter={StaticResource Visible}}" />

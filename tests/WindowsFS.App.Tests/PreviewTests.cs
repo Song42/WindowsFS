@@ -227,9 +227,9 @@ internal static partial class Program
         var before = CapturePickerTree(fixture.Root);
         var prepared = await reader.ReadAsync(PreviewRow(video), 0, CancellationToken.None);
         Equal(video, prepared.VideoPath!);
-        Equal(TimeSpan.FromSeconds(30), FilePreviewReader.MaximumVideoDuration);
+        Equal(TimeSpan.FromSeconds(30), FilePreviewReader.MaximumPlaybackDuration);
         var control = new FilePreviewControl { Preview = prepared };
-        var host = (Border)control.FindName("VideoHost");
+        var host = (Border)control.FindName("MediaHost");
         Check(host.Child is null, "Preparing a video initialized the native media player before explicit playback.");
         control.Preview = new FilePreview("another selection");
         Check(host.Child is null, "Replacing a preview retained its media player.");

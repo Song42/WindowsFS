@@ -120,12 +120,13 @@ scripts/                  로컬 실행 및 배포 스크립트
 
 일반 파일과 폴더를 선택하면 이름, 전체 경로, 상위 폴더, 종류, 분석 당시 논리적 크기·바이트 수와 비율을 표시합니다. 현재 크기와 생성·수정·액세스 시각, 파일 속성은 백그라운드에서 조회합니다. 접근할 수 없거나 삭제된 파일은 저장된 분석 정보와 상태를 표시합니다. 시스템 항목은 기존 설명도 함께 표시합니다.
 
-파일을 선택하면 다음 형식의 미리보기를 자동으로 표시합니다. 여러 페이지 문서의 이전·다음 버튼과 페이지 번호는 미리보기 아래 중앙에 표시합니다. 영상 재생은 별도의 재생 버튼으로 시작합니다.
+파일을 선택하면 다음 형식의 미리보기를 자동으로 표시합니다. 여러 페이지 문서의 이전·다음 버튼과 페이지 번호는 미리보기 아래 중앙에 표시합니다. 오디오·영상 재생은 별도의 재생 버튼으로 시작합니다.
 
 | 종류 | 지원 형식과 범위 |
 | --- | --- |
 | 이미지 | PNG, JPG/JPEG, BMP, GIF, TIFF, ICO. 최대 64 MB·1억 픽셀, 긴 변 1,600픽셀로 축소. GIF/TIFF는 첫 프레임 |
 | 영상 | MP4/M4V, MOV, AVI, WMV, MKV, WebM 중 Windows 미디어 코덱이 지원하는 파일. 최대 2 GB, 처음 30초, 재생·일시정지·처음 버튼. 선택 변경·패널 숨김·종료 시 해제 |
+| 오디오 | MP3. 최대 64 MB, 처음 30초, 재생·일시정지·처음 버튼. 자동 재생 없음. 선택 변경·패널 숨김·종료 시 해제 |
 | PDF | 최대 64 MB, PDFium으로 페이지 표시와 이전·다음 이동. 링크·스크립트 실행 없음 |
 | 문서 | DOCX/DOCM, XLSX/XLSM, PPTX/PPTM, HWPX, ODT/ODS/ODP를 페이지 이미지로 표시. 글꼴·크기·색상·강조·문단 정렬, 표·셀 배경·병합, 삽입 이미지와 이전·다음 페이지 이동 |
 | 텍스트 | 기존 텍스트·소스 형식의 앞부분 64 KB, UTF-8/BOM. HTML도 텍스트로만 표시 |
@@ -135,6 +136,8 @@ scripts/                  로컬 실행 및 배포 스크립트
 내장 렌더러가 지원하는 서식을 재현하며 Office·한글과 픽셀 단위로 동일한 출력은 아닙니다. 설치되지 않은 글꼴, 테마·마스터·복잡한 도형·차트·수식 개체, 머리글·바닥글, 떠 있는 개체 배치, 일부 목록·사용자 지정 숫자 서식은 다르게 표시되거나 생략될 수 있습니다. 삽입 이미지는 PNG/JPEG/GIF/BMP/TIFF를 지원하며 SVG/EMF/WMF는 제외합니다. 문서 레이아웃은 별도 STA 스레드에서 계산하고 화면에는 고정된 페이지 이미지만 전달합니다.
 
 미리보기 내용과 렌더링 이미지는 메모리에서만 처리하며 파일로 추출하거나 캐시에 저장·전송하지 않습니다. 링크·네트워크 경로·오프라인 파일은 제외합니다. 지원하지 않는 코덱, 손상·암호화·크기 제한 파일은 상태를 표시합니다. 디스크 할당 크기는 지원하지 않습니다.
+
+MP3는 ID3v2 태그(최대 8 MB)를 건너뛰고 연속된 MPEG Layer III 프레임을 확인합니다. CBR/VBR 및 MPEG-1/2/2.5 헤더를 지원하며 free-format 비트레이트와 잘린 프레임은 제외합니다. 태그만 있거나 MP3 확장자로 위장한 외부 재생목록은 재생하지 않습니다.
 
 PDF 렌더링은 [PDFium의 V8 없는 배포본](https://github.com/bblanchon/pdfium-binaries), 영상 재생은 [WPF MediaElement](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/graphics-multimedia/multimedia-overview)를 사용합니다. 문서 서식은 [Open XML 패키지](https://learn.microsoft.com/en-us/office/open-xml/about-the-open-xml-sdk), [HWPX 구조](https://tech.hancom.com/hwpxformat/), [OpenDocument 스키마](https://docs.oasis-open.org/office/OpenDocument/v1.3/OpenDocument-v1.3-part3-schema.html)에서 직접 읽어 WPF로 렌더링합니다. Office 설치나 셸 미리보기 처리기는 사용하지 않습니다.
 
