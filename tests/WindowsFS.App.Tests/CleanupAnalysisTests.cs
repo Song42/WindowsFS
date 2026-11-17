@@ -91,13 +91,19 @@ internal static partial class Program
                 var view = Descendants<CleanupAnalysisView>(content).Single();
                 Check(IsEffectivelyVisible(view), "Cleanup view was not rendered.");
                 Check(ReferenceEquals(view.DataContext, vm.Cleanup), "Cleanup view has the wrong data context.");
-                Check(Descendants<Button>(view).Where(item => item.Content is string).All(item => Equals(item.Content, "폴더 탐색") || Equals(item.Content, "공식 문서 ↗")), "Cleanup view exposes an unexpected action.");
+                Check(Descendants<Button>(view).Where(item => item.Content is string).All(item => item.Content is "폴더 탐색" or "공식 문서 ↗" or "새로고침"), "Cleanup view exposes an unexpected action.");
                 var host = (FrameworkElement)window.FindName("CleanupAnalysis");
                 Check(Math.Abs(view.ActualWidth - host.ActualWidth) < 1 && Math.Abs(view.ActualHeight - host.ActualHeight) < 1, "Cleanup view did not fill the available viewport.");
                 Check(typeof(CleanupViewModel).GetProperties().Where(property => typeof(System.Windows.Input.ICommand).IsAssignableFrom(property.PropertyType))
-                    .All(property => property.Name is "BrowseFolderCommand" or "OpenHelpCommand"), "Cleanup exposes a command outside read-only browsing and documentation.");
+                    .All(property => property.Name is "BrowseFolderCommand" or "OpenHelpCommand" or "RefreshFilesCommand"), "Cleanup exposes a command outside read-only browsing and documentation.");
                 var table = (DataGrid)view.FindName("CleanupBuckets");
                 Check(table.IsReadOnly && !table.CanUserDeleteRows && !table.CanUserAddRows, "Cleanup table permits mutations.");
+                foreach (var expander in Descendants<Expander>(view)) expander.IsExpanded = true;
+                LayoutAt(content, size);
+                var files = (DataGrid)view.FindName("CleanupFiles");
+                var locations = (ListBox)view.FindName("CleanupLocations");
+                Check(files.ActualHeight >= 60 && locations.ActualHeight >= 30,
+                    $"Expanded cleanup sections are unusable: files {files.ActualHeight}, locations {locations.ActualHeight}.");
             }
             vm.Cleanup.Search = "Chrome";
             Equal(1, vm.Cleanup.Groups.Count);

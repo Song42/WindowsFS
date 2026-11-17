@@ -13,6 +13,7 @@ The user requires WindowsFS to remain a read-only analyzer of user and system fi
 - Deleting a saved analysis removes only the configured cache file and in-memory results. Never derive a write/delete target from a scan result, selected row, selected scan root, search text, or snapshot contents. Never recursively delete a cache directory.
 - Explorer integration may only reveal a selected path. Clipboard integration may only copy the path text. Official help links may only open documentation; do not execute cleanup commands.
 - Cleanup analysis is explanation and read-only browsing only. Group saved folder metadata without rescanning; installed-app registry metadata may be read without write access. Never execute uninstall strings, cleanup tools, scripts, or automatic removal actions. A cleanup candidate is not a guarantee of safe deletion; preserve explicit evidence and unknown classifications.
+- Cleanup file lists may read current immediate file metadata only from the selected bucket's saved locations. Keep saved aggregate totals distinct from live lists; show read time and partial results. Do not discover new subtrees or persist these lists. Candidate filtering must also exclude non-candidate buckets from visible totals.
 
 ## Navigation
 

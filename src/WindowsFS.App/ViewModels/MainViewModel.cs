@@ -168,7 +168,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         IReadOnlyFileBrowser? fileBrowser = null, IFilePreviewReader? previewReader = null, IMediaInfoReader? mediaInfoReader = null, ICleanupContextReader? cleanupReader = null)
     {
         _scanner = scanner;
-        Cleanup = new CleanupViewModel(cleanupReader, path => NavigateMap(new MapItem("", "", 0, path, true)));
+        Cleanup = new CleanupViewModel(cleanupReader, path => NavigateMap(new MapItem("", "", 0, path, true)),
+            fileBrowser is null ? null : new CleanupFilesReader(fileBrowser));
         _detailsReader = detailsReader;
         _fileBrowser = fileBrowser;
         _previewReader = previewReader ?? new FilePreviewReader();

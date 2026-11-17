@@ -27,10 +27,15 @@ public sealed class ReadOnlyFileBrowser : IReadOnlyFileBrowser
         if (!Path.IsPathFullyQualified(path)) throw new ArgumentException("An absolute folder path is required.", nameof(path));
         var normalized = ScanPath.NormalizeRoot(path);
         var accessPath = ScanPath.ForFileSystemAccess(normalized);
-        var attributes = File.GetAttributes(accessPath);
-        if ((attributes & FileAttributes.Directory) == 0 ||
-            (attributes & (FileAttributes.ReparsePoint | FileAttributes.Offline)) != 0)
-            throw new IOException("The selected path is not an available regular directory.");
+        // Saved paths may now point through a junction or offline ancestor. Never traverse those.
+        for (string? current = normalized; current is not null; current = Path.GetDirectoryName(current))
+        {
+            token.ThrowIfCancellationRequested();
+            var attributes = File.GetAttributes(ScanPath.ForFileSystemAccess(current));
+            if ((attributes & FileAttributes.Directory) == 0 ||
+                (attributes & (FileAttributes.ReparsePoint | FileAttributes.Offline | (FileAttributes)0x40000 | (FileAttributes)0x400000)) != 0)
+                throw new IOException("The selected path is not an available regular directory.");
+        }
 
         var entries = new FileSystemEnumerable<FileRecord?>(accessPath,
             (ref FileSystemEntry entry) => entry.IsDirectory ? null :
