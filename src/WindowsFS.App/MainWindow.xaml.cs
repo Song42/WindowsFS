@@ -10,8 +10,8 @@ namespace WindowsFS.App;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel = new();
-    private bool _closeAfterSave;
-    private bool _waitingForSave;
+    private bool _closeAfterPersistence;
+    private bool _waitingForPersistence;
     public MainWindow()
     {
         InitializeComponent();
@@ -38,12 +38,12 @@ public partial class MainWindow : Window
     private async void WindowClosing(object? sender, CancelEventArgs e)
     {
         _viewModel.Cancel();
-        if (_closeAfterSave || !_viewModel.IsSaving) return;
+        if (_closeAfterPersistence || (!_viewModel.IsSaving && !_viewModel.IsDeleting)) return;
         e.Cancel = true;
-        if (_waitingForSave) return;
-        _waitingForSave = true;
-        await _viewModel.WaitForPendingSaveAsync();
-        _closeAfterSave = true;
+        if (_waitingForPersistence) return;
+        _waitingForPersistence = true;
+        await _viewModel.WaitForPendingPersistenceAsync();
+        _closeAfterPersistence = true;
         Close();
     }
     private void MinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;

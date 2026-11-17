@@ -50,11 +50,18 @@ internal static class Program
             ("Saved scans restore without enumeration and remain navigable", RestoreSavedScan),
             ("Completed scans save their scope and restore in another view model", SaveCompletedScan),
             ("Cancelled scans preserve the previous completed snapshot", PreserveCompletedSnapshot),
+            ("An immediate scan can cancel and still delete an unrestored saved snapshot", DeleteUnrestoredSnapshotAfterCancellation),
             ("Missing snapshots do not start an automatic scan", MissingSnapshot),
             ("Unreadable and corrupt snapshots permit an explicit fresh scan", SnapshotLoadFailure),
             ("A failed snapshot write retains both results and the previous save", SnapshotSaveFailure),
             ("Restoring a snapshot blocks overlapping restores and scans", RestoreConcurrency),
             ("Pending saves ignore late progress and can be awaited before closing", PendingSave),
+            ("Deleting a saved scan clears results and stays empty after restart", DeleteSavedScan),
+            ("Failed deletion preserves the saved scan and current view", SnapshotDeleteFailure),
+            ("Deletion is unavailable without a saved scan or a store", UnavailableSnapshotDeletion),
+            ("Corrupt and unreadable saved scans can be deleted without scanning", DeleteUnreadableSnapshot),
+            ("Pending deletion blocks conflicting operations and is awaited before closing", PendingDeletion),
+            ("Actual XAML binds saved-analysis deletion and updates button availability", SnapshotDeletionXaml),
             ("System explanations match known selections without classifying user files", SystemItemSelection),
             ("Known folder explanations follow navigation and support dismissing", SystemFolderNavigation),
             ("Actual XAML renders the selected system explanation", SystemItemXaml)
@@ -551,6 +558,8 @@ internal static class Program
         Equal(1, store.LoadCalls);
         Equal(0, store.SaveCalls);
         Equal(0, scanner.ProgressReports.Count);
+        Check(vm.HasSavedAnalysis && vm.DeleteSavedAnalysisCommand.CanExecute(null),
+            "A restored snapshot was not available for deletion.");
         Check(vm.HasResult && !vm.IsBusy && !vm.IsRestoring && !vm.ShowEmpty,
             "A stored snapshot did not become an interactive result.");
         Equal("저장된 분석", vm.ScanState);
@@ -586,6 +595,8 @@ internal static class Program
 
         Equal(1, store.SaveCalls);
         Check(store.Saved is not null, "A completed scan was not saved.");
+        Check(vm.HasSavedAnalysis && vm.DeleteSavedAnalysisCommand.CanExecute(null),
+            "A newly saved snapshot was not available for deletion.");
         var saved = store.Saved!;
         Equal(FixturePath, saved.SelectedPath!);
         Equal(1_000L, saved.Result.TotalBytes);
@@ -633,6 +644,12 @@ internal static class Program
         await restored.RestoreLastScanAsync();
         Equal("저장된 분석", restored.ScanState);
         Equal(DisplayFormat.Bytes(previous.Result.TotalBytes), restored.TotalSize);
+        Check(vm.HasSavedAnalysis && vm.DeleteSavedAnalysisCommand.CanExecute(null),
+            "A partial result hid the older completed snapshot from deletion.");
+        await vm.DeleteSavedAnalysisAsync();
+        Equal(1, store.DeleteCalls);
+        Check(store.Saved is null && !vm.HasSavedAnalysis && !vm.HasResult,
+            "Deleting after cancellation left either the old save or partial result visible.");
     }
 
     private static async Task MissingSnapshot()
@@ -687,6 +704,51 @@ internal static class Program
         Equal(4, vm.Rows.Count);
         Check(vm.Status.Contains("저장", StringComparison.Ordinal), "A failed save was not explained.");
         Check(!vm.Status.Contains("Synthetic", StringComparison.Ordinal), "Raw save errors leaked into the status.");
+        Equal(0, store.LoadCalls);
+        Check(vm.HasSavedAnalysis && vm.DeleteSavedAnalysisCommand.CanExecute(null),
+            "A failed immediate scan save hid the existing snapshot that was never restored.");
+        await vm.DeleteSavedAnalysisAsync();
+        Check(store.Saved is null && !vm.HasSavedAnalysis && !vm.HasResult,
+            "The previous snapshot could not be deleted after an immediate scan failed to save.");
+    }
+
+    private static async Task DeleteUnrestoredSnapshotAfterCancellation()
+    {
+        var previous = new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow.AddDays(-1));
+        var store = new StubStore(previous);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource<ScanResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var scanner = new StubScanner(async (_, _, token) =>
+        {
+            using var registration = token.Register(() => finish.TrySetResult(FixtureResult() with { IsCancelled = true }));
+            started.TrySetResult();
+            return await finish.Task;
+        });
+        var vm = CreateViewModel(scanner, store);
+        var pending = vm.ScanAsync();
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Check(vm.IsBusy && vm.HasSavedAnalysis && !vm.DeleteSavedAnalysisCommand.CanExecute(null),
+                "An immediate scan did not track the unrestored save or allowed deletion while scanning.");
+            await vm.DeleteSavedAnalysisAsync();
+            await vm.RestoreLastScanAsync();
+            Equal(0, store.DeleteCalls);
+            Equal(0, store.LoadCalls);
+            vm.CancelCommand.Execute(null);
+            await pending;
+            Equal(0, store.SaveCalls);
+            Check(ReferenceEquals(previous, store.Saved), "Cancellation replaced the unrestored snapshot.");
+            Check(vm.HasResult && vm.HasSavedAnalysis && vm.DeleteSavedAnalysisCommand.CanExecute(null),
+                "Cancelling an immediate scan made the unrestored snapshot unavailable for deletion.");
+            Equal("부분 결과", vm.ScanState);
+            await vm.DeleteSavedAnalysisAsync();
+            Equal(1, store.DeleteCalls);
+            Check(store.Saved is null && !vm.HasSavedAnalysis && !vm.HasResult,
+                "Deletion left the unrestored save or partial result behind.");
+            Equal(1, scanner.ProgressReports.Count);
+        }
+        finally { finish.TrySetResult(FixtureResult() with { IsCancelled = true }); }
     }
 
     private static async Task RestoreConcurrency()
@@ -698,10 +760,13 @@ internal static class Program
         var pending = vm.RestoreLastScanAsync();
         Check(vm.IsRestoring, "The app did not report an outstanding snapshot load.");
         Check(!vm.ScanCommand.CanExecute(null) && !vm.SelectDriveCommand.CanExecute(null) &&
-            !vm.ChooseFolderCommand.CanExecute(null), "Conflicting actions remained enabled during restore.");
+            !vm.ChooseFolderCommand.CanExecute(null) && !vm.DeleteSavedAnalysisCommand.CanExecute(null),
+            "Conflicting actions remained enabled during restore.");
         var overlappingRestore = vm.RestoreLastScanAsync();
         await vm.ScanAsync();
+        await vm.DeleteSavedAnalysisAsync();
         Equal(1, store.LoadCalls);
+        Equal(0, store.DeleteCalls);
         Equal(0, scanner.ProgressReports.Count);
         completion.SetResult(new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow.AddMinutes(-1)));
         await Task.WhenAll(pending, overlappingRestore);
@@ -714,12 +779,13 @@ internal static class Program
     {
         var saveStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var finishSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var store = new StubStore
+        var store = new StubStore(new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow.AddDays(-1)))
         {
             OnSave = (_, _) => { saveStarted.TrySetResult(); return finishSave.Task; }
         };
         var scanner = new StubScanner((_, _, _) => Task.FromResult(FixtureResult()));
         var vm = CreateViewModel(scanner, store);
+        await vm.RestoreLastScanAsync();
         var scan = vm.ScanAsync();
         try
         {
@@ -728,17 +794,260 @@ internal static class Program
                 "A completed scan save must not be treated as a cancellable scan.");
             var closingWait = vm.WaitForPendingSaveAsync();
             Check(!closingWait.IsCompleted, "Closing could bypass an outstanding snapshot write.");
+            var persistenceWait = vm.WaitForPendingPersistenceAsync();
+            Check(!persistenceWait.IsCompleted, "The persistence wait did not include the outstanding save.");
+            Check(!vm.DeleteSavedAnalysisCommand.CanExecute(null), "Deletion remained enabled during a save.");
+            await vm.DeleteSavedAnalysisAsync();
+            await vm.RestoreLastScanAsync();
+            await vm.ScanAsync();
+            Equal(0, store.DeleteCalls);
+            Equal(1, store.LoadCalls);
+            Equal(1, scanner.ProgressReports.Count);
             scanner.ProgressReports.Single()!.Report(new ScanProgress(1, 1, 1, 0,
                 TimeSpan.FromSeconds(99), "old progress"));
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Equal(DisplayFormat.Bytes(1_000), vm.TotalSize);
             Equal("4", vm.FileCount);
             finishSave.TrySetResult();
-            await Task.WhenAll(scan, closingWait);
+            await Task.WhenAll(scan, closingWait, persistenceWait);
             Check(!vm.IsBusy && !vm.IsSaving, "The pending save did not settle.");
             Equal(1_000L, store.Saved!.Result.TotalBytes);
         }
         finally { finishSave.TrySetResult(); }
+    }
+
+    private static async Task DeleteSavedScan()
+    {
+        var saved = new SavedScan(SystemFixtureResult(), @"X:\", DateTimeOffset.UtcNow.AddDays(-1));
+        var store = new StubStore(saved);
+        var scanner = new StubScanner((_, _, _) => throw new InvalidOperationException("Deletion must not enumerate."));
+        var vm = new MainViewModel(scanner, store, new SystemItemCatalog(@"X:\Windows", @"X:\"));
+        var empty = new MainViewModel(scanner, null, new SystemItemCatalog(@"X:\Windows", @"X:\"));
+        await vm.RestoreLastScanAsync();
+        vm.NavigateMap(vm.MapItems.Single(item => item.Path == @"X:\Windows"));
+        vm.Search = "System32";
+        vm.SelectedRow = vm.Rows.Single();
+        Check(vm.HasSystemInfo && vm.SelectedRow is not null && vm.UpCommand.CanExecute(null),
+            "The deletion fixture must contain a system selection and folder navigation.");
+        vm.SelectDriveCommand.Execute(@"X:\NextScan");
+        vm.SetMapLayoutCommand.Execute("donut");
+
+        await vm.DeleteSavedAnalysisAsync();
+
+        Equal(1, store.DeleteCalls);
+        Equal(0, store.SaveCalls);
+        Equal(0, scanner.ProgressReports.Count);
+        Check(store.Saved is null && !vm.HasSavedAnalysis && !vm.HasResult && vm.ShowEmpty && vm.IsIdle,
+            "Successful deletion did not clear the saved and displayed analysis.");
+        Check(!vm.IsDeleting && !vm.DeleteSavedAnalysisCommand.CanExecute(null),
+            "Deletion did not settle into the unavailable state.");
+        Equal(0, vm.Rows.Count);
+        Equal(0, vm.MapItems.Count);
+        Check(vm.SelectedRow is null && vm.SystemInfo is null && !vm.HasSystemInfo,
+            "Deleted metadata remained selected or explained.");
+        Equal(empty.TotalSize, vm.TotalSize);
+        Equal(empty.FileCount, vm.FileCount);
+        Equal(empty.FolderCount, vm.FolderCount);
+        Equal(empty.Skipped, vm.Skipped);
+        Equal(empty.Elapsed, vm.Elapsed);
+        Equal(empty.CurrentPath, vm.CurrentPath);
+        Equal(empty.SnapshotDescription, vm.SnapshotDescription);
+        Equal(empty.ResultScope, vm.ResultScope);
+        Equal(empty.Search, vm.Search);
+        Equal(empty.Breadcrumb, vm.Breadcrumb);
+        Check(!vm.UpCommand.CanExecute(null), "Deleted folder navigation remained active.");
+        Equal(@"X:\NextScan", vm.TargetLabel);
+        Equal(SpaceMapLayout.Donut, vm.MapLayout);
+        foreach (var view in new[] { "folders", "types", "files", "overview" })
+        {
+            vm.NavigateCommand.Execute(view);
+            Equal(0, vm.Rows.Count);
+            Equal(0, vm.MapItems.Count);
+            Check(vm.SystemInfo is null, "Switching views restored deleted metadata.");
+        }
+
+        var restarted = CreateViewModel(scanner, store);
+        await restarted.RestoreLastScanAsync();
+        Check(restarted.ShowEmpty && !restarted.HasSavedAnalysis && !restarted.HasResult,
+            "A new view model restored a deleted snapshot.");
+        Equal(0, scanner.ProgressReports.Count);
+    }
+
+    private static async Task SnapshotDeleteFailure()
+    {
+        foreach (var error in new Exception[]
+        {
+            new IOException(@"Synthetic deletion failure X:\Private\cache.gz"),
+            new UnauthorizedAccessException(@"Synthetic deletion denial X:\Private\cache.gz"),
+            new System.Security.SecurityException(@"Synthetic deletion denial X:\Private\cache.gz")
+        })
+        {
+            var previous = new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow.AddDays(-1));
+            var store = new StubStore(previous) { OnDelete = _ => Task.FromException(error) };
+            var scanner = new StubScanner((_, _, _) => throw new InvalidOperationException("Deletion must not enumerate."));
+            var vm = CreateViewModel(scanner, store);
+            await vm.RestoreLastScanAsync();
+            vm.NavigateCommand.Execute("files");
+            vm.Search = "history";
+            vm.SelectedRow = vm.Rows.Single();
+            var selected = vm.SelectedRow;
+            var rows = vm.Rows;
+            var map = vm.MapItems;
+            var description = vm.SnapshotDescription;
+            var scope = vm.ResultScope;
+
+            await vm.DeleteSavedAnalysisAsync();
+
+            Equal(1, store.DeleteCalls);
+            Check(ReferenceEquals(previous, store.Saved), "A failed deletion lost the saved snapshot.");
+            Check(vm.HasResult && vm.HasSavedAnalysis && vm.IsIdle && !vm.IsDeleting &&
+                vm.DeleteSavedAnalysisCommand.CanExecute(null), "Deletion failure did not leave a usable result and retry.");
+            Check(ReferenceEquals(rows, vm.Rows) && ReferenceEquals(map, vm.MapItems) &&
+                ReferenceEquals(selected, vm.SelectedRow), "Deletion failure changed the current view or selection.");
+            Equal("history", vm.Search);
+            Equal(description, vm.SnapshotDescription);
+            Equal(scope, vm.ResultScope);
+            Equal(DisplayFormat.Bytes(1_000), vm.TotalSize);
+            Check(vm.Status.Contains("삭제", StringComparison.Ordinal), "Deletion failure was not described.");
+            Check(!vm.Status.Contains("Synthetic", StringComparison.Ordinal) &&
+                !vm.Status.Contains(@"X:\Private", StringComparison.Ordinal), "A raw deletion error exposed private paths.");
+            await vm.WaitForPendingPersistenceAsync();
+            Equal(0, scanner.ProgressReports.Count);
+        }
+    }
+
+    private static async Task UnavailableSnapshotDeletion()
+    {
+        var scanner = new StubScanner((_, _, _) => Task.FromResult(FixtureResult()));
+        var store = new StubStore();
+        var vm = CreateViewModel(scanner, store);
+        await vm.RestoreLastScanAsync();
+        Check(!vm.HasSavedAnalysis && !vm.DeleteSavedAnalysisCommand.CanExecute(null),
+            "A missing snapshot enabled deletion.");
+        await vm.DeleteSavedAnalysisAsync();
+        Equal(0, store.DeleteCalls);
+        Equal(0, scanner.ProgressReports.Count);
+
+        var withoutStore = CreateViewModel(scanner);
+        await withoutStore.ScanAsync();
+        Check(!withoutStore.HasSavedAnalysis && !withoutStore.DeleteSavedAnalysisCommand.CanExecute(null),
+            "An unsaved result without a store enabled saved-analysis deletion.");
+        await withoutStore.DeleteSavedAnalysisAsync();
+        Check(withoutStore.HasResult, "An unavailable delete discarded an unsaved result.");
+    }
+
+    private static async Task DeleteUnreadableSnapshot()
+    {
+        foreach (var error in new Exception[]
+        {
+            new InvalidDataException("Synthetic corrupt snapshot"),
+            new IOException("Synthetic unreadable snapshot"),
+            new UnauthorizedAccessException("Synthetic unreadable snapshot"),
+            new System.Security.SecurityException("Synthetic unreadable snapshot")
+        })
+        {
+            var loads = 0;
+            var store = new StubStore
+            {
+                OnLoad = _ => ++loads == 1 ? Task.FromException<SavedScan?>(error) : Task.FromResult<SavedScan?>(null)
+            };
+            var scanner = new StubScanner((_, _, _) => throw new InvalidOperationException("Recovery must not enumerate."));
+            var vm = CreateViewModel(scanner, store);
+            await vm.RestoreLastScanAsync();
+            Check(!vm.HasResult && vm.HasSavedAnalysis && vm.DeleteSavedAnalysisCommand.CanExecute(null),
+                "An unreadable snapshot was not available for deletion.");
+
+            await vm.DeleteSavedAnalysisAsync();
+
+            Equal(1, store.DeleteCalls);
+            Check(!vm.HasSavedAnalysis && !vm.IsDeleting && vm.ShowEmpty, "Unreadable cache deletion did not finish.");
+            var restarted = CreateViewModel(scanner, store);
+            await restarted.RestoreLastScanAsync();
+            Check(restarted.ShowEmpty && !restarted.HasSavedAnalysis, "Deleted unreadable cache remained available.");
+            Equal(0, scanner.ProgressReports.Count);
+        }
+    }
+
+    private static async Task PendingDeletion()
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new StubStore(new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow))
+        {
+            OnDelete = _ => completion.Task
+        };
+        var scanner = new StubScanner((_, _, _) => throw new InvalidOperationException("A scan overlapped deletion."));
+        var vm = CreateViewModel(scanner, store);
+        await vm.RestoreLastScanAsync();
+        var deletion = vm.DeleteSavedAnalysisAsync();
+        try
+        {
+            Check(vm.IsDeleting && !vm.IsIdle && vm.HasResult && vm.HasSavedAnalysis,
+                "A pending deletion cleared results before the store confirmed success.");
+            Check(!vm.DeleteSavedAnalysisCommand.CanExecute(null) && !vm.ScanCommand.CanExecute(null) &&
+                !vm.ChooseFolderCommand.CanExecute(null) && !vm.SelectDriveCommand.CanExecute(null),
+                "Conflicting actions remained enabled during deletion.");
+            await vm.DeleteSavedAnalysisAsync();
+            await vm.RestoreLastScanAsync();
+            await vm.ScanAsync();
+            Equal(1, store.DeleteCalls);
+            Equal(1, store.LoadCalls);
+            Equal(0, scanner.ProgressReports.Count);
+            var closingWait = vm.WaitForPendingPersistenceAsync();
+            Check(!closingWait.IsCompleted, "Closing could bypass an outstanding snapshot deletion.");
+            completion.TrySetResult();
+            await Task.WhenAll(deletion, closingWait);
+            Check(vm.IsIdle && !vm.IsDeleting && !vm.HasResult && !vm.HasSavedAnalysis,
+                "Pending deletion did not settle and clear the analysis.");
+        }
+        finally { completion.TrySetResult(); }
+    }
+
+    private static async Task SnapshotDeletionXaml()
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new StubStore(new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow))
+        {
+            OnDelete = _ => completion.Task
+        };
+        var scanner = new StubScanner((_, _, _) => throw new InvalidOperationException("The delete button must not scan."));
+        var vm = CreateViewModel(scanner, store);
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            var content = (FrameworkElement)window.Content;
+            Render(content);
+            var button = window.FindName("DeleteSavedAnalysisButton") as Button ??
+                throw new InvalidOperationException("The saved-analysis delete button is missing from XAML.");
+            Check(button.Visibility == Visibility.Visible && !button.IsEnabled,
+                "The saved-analysis delete button must remain visible but disabled without a snapshot.");
+            var binding = BindingOperations.GetBindingExpression(button, Button.CommandProperty);
+            Check(binding is not null && binding.Status == BindingStatus.Active &&
+                ReferenceEquals(button.Command, vm.DeleteSavedAnalysisCommand), "The XAML delete command is not bound.");
+            Check(button.ToolTip is string tooltip && tooltip.Contains("파일", StringComparison.Ordinal),
+                "The delete control must explain its effect on source files.");
+
+            await vm.RestoreLastScanAsync();
+            Render(content);
+            Check(button.IsEnabled, "The delete button did not enable after loading a snapshot.");
+            button.Command.Execute(button.CommandParameter);
+            Render(content);
+            Equal(1, store.DeleteCalls);
+            Check(vm.IsDeleting && !button.IsEnabled, "The delete button allowed duplicate pending deletions.");
+            completion.TrySetResult();
+            await vm.WaitForPendingPersistenceAsync();
+            Render(content);
+            Check(!button.IsEnabled && !vm.HasResult && !vm.HasSavedAnalysis,
+                "The delete button or visible analysis remained active after deletion.");
+            Equal(0, Descendants<DataGrid>(content).Single().Items.Count);
+            Equal(0, scanner.ProgressReports.Count);
+            Check(!window.IsVisible, "The delete-control fixture must not open a desktop window.");
+        }
+        finally
+        {
+            completion.TrySetResult();
+            await vm.WaitForPendingPersistenceAsync();
+            window.Close();
+        }
     }
 
     private static async Task SystemItemSelection()
@@ -969,8 +1278,12 @@ internal static class Program
         public SavedScan? Saved { get; private set; } = initial;
         public int LoadCalls { get; private set; }
         public int SaveCalls { get; private set; }
+        public int DeleteCalls { get; private set; }
         public Func<CancellationToken, Task<SavedScan?>>? OnLoad { get; init; }
         public Func<SavedScan, CancellationToken, Task>? OnSave { get; init; }
+        public Func<CancellationToken, Task>? OnDelete { get; init; }
+
+        public Task<bool> ExistsAsync(CancellationToken cancellationToken = default) => Task.FromResult(Saved is not null);
 
         public Task<SavedScan?> LoadAsync(CancellationToken cancellationToken = default)
         {
@@ -983,6 +1296,13 @@ internal static class Program
             SaveCalls++;
             if (OnSave is not null) await OnSave(snapshot, cancellationToken);
             Saved = snapshot;
+        }
+
+        public async Task DeleteAsync(CancellationToken cancellationToken = default)
+        {
+            DeleteCalls++;
+            if (OnDelete is not null) await OnDelete(cancellationToken);
+            Saved = null;
         }
     }
 }

@@ -57,6 +57,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly IScanResultStore? _store;
     private readonly SystemItemCatalog _systemCatalog;
     private Task? _pendingSave;
+    private Task? _pendingDeletion;
     private CancellationTokenSource? _scanCancellation;
     private ScanResult? _result;
     private Dictionary<string, FolderNode> _folders = new(StringComparer.Ordinal);
@@ -70,6 +71,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _drivesLoaded;
     private bool _isRestoring;
     private bool _isSaving;
+    private bool _isDeleting;
+    private bool _hasSavedAnalysis;
     private bool _isRestored;
     private bool _snapshotSaved;
     private DateTimeOffset? _scannedAtUtc;
@@ -102,6 +105,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Status = "중지 중 · 부분 결과 집계";
         }, _ => IsBusy && !IsSaving && _scanCancellation is not null);
         ChooseFolderCommand = new RelayCommand(_ => ChooseFolder(), _ => IsIdle);
+        DeleteSavedAnalysisCommand = new RelayCommand(async _ => await DeleteSavedAnalysisAsync(), _ => _store is not null && IsIdle && HasSavedAnalysis);
         SelectDriveCommand = new RelayCommand(p => SelectPath(p as string), _ => IsIdle);
         NavigateCommand = new RelayCommand(p => { _view = p as string ?? "overview"; _search = ""; Changed(nameof(Search)); RefreshView(); });
         SetMapLayoutCommand = new RelayCommand(p =>
@@ -124,6 +128,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand ScanCommand { get; }
     public ICommand CancelCommand { get; }
     public ICommand ChooseFolderCommand { get; }
+    public ICommand DeleteSavedAnalysisCommand { get; }
     public ICommand SelectDriveCommand { get; }
     public ICommand NavigateCommand { get; }
     public ICommand SetMapLayoutCommand { get; }
@@ -140,9 +145,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasSystemInfo => CanShowSystemInfo && !_systemInfoDismissed;
     public bool IsMapVisible => ShowMap && !HasSystemInfo;
     public bool IsBusy { get => _busy; private set { _busy = value; Changed(); Changed(nameof(IsIdle)); Changed(nameof(ScanLabel)); CommandManager.InvalidateRequerySuggested(); } }
-    public bool IsIdle => !IsBusy && !IsRestoring;
+    public bool IsIdle => !IsBusy && !IsRestoring && !IsSaving && !IsDeleting;
     public bool IsRestoring { get => _isRestoring; private set { _isRestoring = value; Changed(); Changed(nameof(IsIdle)); Changed(nameof(ScanState)); CommandManager.InvalidateRequerySuggested(); } }
-    public bool IsSaving { get => _isSaving; private set { _isSaving = value; Changed(); Changed(nameof(ScanState)); CommandManager.InvalidateRequerySuggested(); } }
+    public bool IsSaving { get => _isSaving; private set { _isSaving = value; Changed(); Changed(nameof(IsIdle)); Changed(nameof(ScanState)); CommandManager.InvalidateRequerySuggested(); } }
+    public bool IsDeleting { get => _isDeleting; private set { _isDeleting = value; Changed(); Changed(nameof(IsIdle)); Changed(nameof(ScanState)); CommandManager.InvalidateRequerySuggested(); } }
+    public bool HasSavedAnalysis { get => _hasSavedAnalysis; private set { _hasSavedAnalysis = value; Changed(); CommandManager.InvalidateRequerySuggested(); } }
     public bool HasResult => _result is not null;
     public bool ShowEmpty => _result is null;
     public bool ShowMap => _view is "overview" or "folders";
@@ -167,7 +174,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string Elapsed => _elapsed.TotalHours >= 1 ? _elapsed.ToString(@"h\:mm\:ss") : _elapsed.ToString(@"mm\:ss");
     public string Speed => _elapsed.TotalSeconds > 0 ? $"{_files / _elapsed.TotalSeconds:N0} 파일/초" : "분석 대기";
     public string Skipped => _skipped.ToString("N0");
-    public string ScanState => IsRestoring ? "불러오는 중" : IsSaving ? "저장 중" : IsBusy ? "분석 중" : _result is null ? "준비됨" : _result.IsCancelled ? "부분 결과" : _isRestored ? "저장된 분석" : "분석 완료";
+    public string ScanState => IsDeleting ? "삭제 중" : IsRestoring ? "불러오는 중" : IsSaving ? "저장 중" : IsBusy ? "분석 중" : _result is null ? "준비됨" : _result.IsCancelled ? "부분 결과" : _isRestored ? "저장된 분석" : "분석 완료";
     public string PageTitle => _view switch { "files" => "가장 큰 파일", "folders" => "폴더 탐색", "types" => "파일 형식", _ => "공간 분석" };
     public string PageDescription => _view switch { "files" => "최대 1,000개 · 용량순", "folders" => "폴더별 용량 · 두 번 클릭: 하위 폴더 열기", "types" => "확장자별 용량 합계", _ => "파일·폴더별 용량 분포" };
     public string TableTitle => _view switch { "folders" => "하위 폴더", "types" => "형식별 사용량", _ => "가장 큰 파일" };
@@ -237,7 +244,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public async Task RestoreLastScanAsync()
     {
-        if (_store is null || IsBusy || IsRestoring) return;
+        if (_store is null || !IsIdle) return;
         IsRestoring = true;
         Status = "저장된 분석 로딩 중";
         try
@@ -245,6 +252,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var saved = await _store.LoadAsync();
             if (saved is null)
             {
+                HasSavedAnalysis = false;
                 Status = "분석 대기";
                 return;
             }
@@ -254,11 +262,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _resultScope = TargetLabel;
             _scannedAtUtc = saved.ScannedAtUtc;
             _snapshotSaved = _isRestored = true;
+            HasSavedAnalysis = true;
             Status = "저장된 분석";
             CurrentPath = "";
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.SecurityException)
         {
+            // An unreadable or corrupt cache must remain removable without loading its contents.
+            HasSavedAnalysis = true;
             Status = "저장된 분석 로딩 실패";
         }
         finally
@@ -271,7 +282,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public async Task ScanAsync()
     {
-        if (IsBusy || IsRestoring) return;
+        if (!IsIdle) return;
         var roots = _selectedPath is null ? Drives.Select(d => d.Path).ToArray() : [_selectedPath];
         if (roots.Length == 0) { Status = "분석 가능한 드라이브 없음"; return; }
         using var cancellation = new CancellationTokenSource();
@@ -291,6 +302,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
         NotifyStatistics(); Changed(nameof(HasResult)); Changed(nameof(ShowEmpty)); Changed(nameof(NoRows));
         try
         {
+            // Explicit --scan startup skips restoration; retain access to any previous cache
+            // even when this scan is cancelled or its replacement cannot be saved.
+            if (_store is not null && !HasSavedAnalysis)
+            {
+                try { HasSavedAnalysis = await _store.ExistsAsync(); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                {
+                    HasSavedAnalysis = true;
+                }
+            }
             var progress = new Progress<ScanProgress>(p =>
             {
                 if (!ReferenceEquals(_scanCancellation, cancellation) || !IsBusy) return;
@@ -338,12 +359,56 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public Task WaitForPendingSaveAsync() => _pendingSave ?? Task.CompletedTask;
 
+    public Task WaitForPendingPersistenceAsync() => Task.WhenAll(
+        _pendingSave ?? Task.CompletedTask, _pendingDeletion ?? Task.CompletedTask);
+
+    public Task DeleteSavedAnalysisAsync()
+    {
+        if (_store is null || !IsIdle || !HasSavedAnalysis) return Task.CompletedTask;
+        IsDeleting = true;
+        Status = "저장된 분석 삭제 중";
+        _pendingDeletion = DeleteSnapshotAsync();
+        return _pendingDeletion;
+    }
+
+    private async Task DeleteSnapshotAsync()
+    {
+        try
+        {
+            await _store!.DeleteAsync();
+            HasSavedAnalysis = false;
+            _result = null;
+            _folders.Clear(); _parents.Clear(); _folderPath = null;
+            _resultScope = "";
+            _search = "";
+            _scannedAtUtc = null;
+            _snapshotSaved = _isRestored = false;
+            _bytes = _files = _folderCount = _skipped = 0;
+            _elapsed = TimeSpan.Zero;
+            CurrentPath = "";
+            _pendingSave = null;
+            Changed(nameof(Search));
+            NotifyResult();
+            RefreshView();
+            Status = "저장된 분석 삭제됨";
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            Status = "저장된 분석 삭제 실패";
+        }
+        finally
+        {
+            IsDeleting = false;
+        }
+    }
+
     private async Task SaveSnapshotAsync(SavedScan snapshot)
     {
         try
         {
             await _store!.SaveAsync(snapshot);
             _snapshotSaved = true;
+            HasSavedAnalysis = true;
             Status = "분석 완료 · 저장됨";
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.SecurityException)

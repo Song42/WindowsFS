@@ -13,12 +13,26 @@ public sealed class FileScanResultStore : IScanResultStore
     private const long MaximumJsonBytes = 512L * 1024 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new() { MaxDepth = 16 };
     private readonly string _filePath;
+    private readonly SemaphoreSlim _mutationGate = new(1, 1);
 
     public FileScanResultStore(string filePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         _filePath = Path.GetFullPath(filePath);
     }
+
+    public Task<bool> ExistsAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                _ = File.GetAttributes(_filePath);
+                return true;
+            }
+            catch (FileNotFoundException) { return false; }
+            catch (DirectoryNotFoundException) { return false; }
+        }, cancellationToken);
 
     // JSON validation, tree conversion, compression, and durable flushing stay off the UI thread.
     public Task<SavedScan?> LoadAsync(CancellationToken cancellationToken = default) =>
@@ -30,7 +44,24 @@ public sealed class FileScanResultStore : IScanResultStore
         ArgumentNullException.ThrowIfNull(snapshot.Result);
         if (snapshot.Result.IsCancelled)
             throw new ArgumentException("Only completed scans can replace the saved snapshot.", nameof(snapshot));
-        return Task.Run(() => SaveCoreAsync(snapshot, cancellationToken), cancellationToken);
+        return MutateAsync(() => SaveCoreAsync(snapshot, cancellationToken), cancellationToken);
+    }
+
+    public Task DeleteAsync(CancellationToken cancellationToken = default) =>
+        MutateAsync(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try { File.Delete(_filePath); }
+            catch (DirectoryNotFoundException) { }
+            return Task.CompletedTask;
+        }, cancellationToken);
+
+    private async Task MutateAsync(Func<Task> mutation, CancellationToken cancellationToken)
+    {
+        // Acquire before scheduling work so an in-flight save finishes before a later delete.
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try { await Task.Run(mutation, cancellationToken).ConfigureAwait(false); }
+        finally { _mutationGate.Release(); }
     }
 
     private async Task<SavedScan?> LoadCoreAsync(CancellationToken cancellationToken)

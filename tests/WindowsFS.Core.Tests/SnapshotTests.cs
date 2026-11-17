@@ -15,7 +15,13 @@ internal static class SnapshotTests
         ("Malformed and unsupported snapshots are rejected", InvalidDocuments),
         ("Cancelled and partial saves preserve the last completed scan", CancelledSave),
         ("Failed atomic replacement preserves the previous snapshot", FailedReplacement),
-        ("Concurrent snapshot readers never observe a partial file", ConcurrentReaders)
+        ("Concurrent snapshot readers never observe a partial file", ConcurrentReaders),
+        ("Deleting a snapshot preserves neighboring and analyzed files", DeleteSnapshot),
+        ("Deleting a missing snapshot does not create a cache", DeleteMissing),
+        ("Deleting a corrupt snapshot does not require loading it", DeleteCorrupt),
+        ("Cancelled deletion preserves the completed snapshot", CancelledDelete),
+        ("Failed deletion preserves the completed snapshot", FailedDelete),
+        ("Deleting after an in-flight save cannot restore the snapshot", DeleteAfterSave)
     ];
 
     private static async Task RoundTrip()
@@ -29,6 +35,7 @@ internal static class SnapshotTests
         var saved = new SavedScan(result, null, new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.FromHours(2)));
         var store = new FileScanResultStore(fixture.PathOf("cache/latest.scan.json.gz"));
         await store.SaveAsync(saved);
+        Check(await store.ExistsAsync(), "The completed snapshot was not detected.");
         var loaded = await new FileScanResultStore(fixture.PathOf("cache/latest.scan.json.gz")).LoadAsync();
         Check(loaded is not null, "The completed snapshot was not restored by a new store instance.");
         Equal(saved.ScannedAtUtc, loaded!.ScannedAtUtc);
@@ -115,10 +122,12 @@ internal static class SnapshotTests
         using var fixture = new Fixture();
         var directory = fixture.PathOf("not-created");
         var store = new FileScanResultStore(Path.Combine(directory, "latest.scan.json.gz"));
+        Check(!await store.ExistsAsync(), "A missing cache was reported as present.");
         Check(await store.LoadAsync() is null, "Missing cache was not treated as empty.");
         Check(!Directory.Exists(directory), "Reading missing cache created directories.");
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
+        await ThrowsAsync<OperationCanceledException>(() => store.ExistsAsync(cancellation.Token));
         await ThrowsAsync<OperationCanceledException>(() => store.LoadAsync(cancellation.Token));
     }
 
@@ -225,6 +234,120 @@ internal static class SnapshotTests
         }
         finally { await Task.WhenAll(writers); }
         Equal(1, Directory.GetFiles(Path.GetDirectoryName(path)!).Length);
+    }
+
+    private static async Task DeleteSnapshot()
+    {
+        using var fixture = new Fixture();
+        fixture.File("input/sample.bin", 100);
+        fixture.File("input/nested/keep.bin", 200);
+        fixture.File("cache/sentinel.bin", 300);
+        var sourcePath = fixture.PathOf("input/sample.bin");
+        var nestedPath = fixture.PathOf("input/nested/keep.bin");
+        var sentinelPath = fixture.PathOf("cache/sentinel.bin");
+        var before = await File.ReadAllBytesAsync(sourcePath);
+        var sentinelBefore = await File.ReadAllBytesAsync(sentinelPath);
+        var path = fixture.PathOf("cache/latest.scan.json.gz");
+        var store = new FileScanResultStore(path);
+        await store.SaveAsync(SyntheticScan(fixture.PathOf("input"), 100));
+
+        await store.DeleteAsync();
+
+        Check(!File.Exists(path), "The saved snapshot still exists after deletion.");
+        Check(!await store.ExistsAsync(), "A deleted snapshot was reported as present.");
+        Check(await new FileScanResultStore(path).LoadAsync() is null, "A new store restored a deleted snapshot.");
+        var after = await File.ReadAllBytesAsync(sourcePath);
+        var sentinelAfter = await File.ReadAllBytesAsync(sentinelPath);
+        Check(before.SequenceEqual(after), "An analyzed source file changed.");
+        Equal(200L, new FileInfo(nestedPath).Length);
+        Check(sentinelBefore.SequenceEqual(sentinelAfter), "A neighboring cache file changed.");
+        Check(Directory.Exists(fixture.PathOf("cache")), "Deletion removed the cache directory.");
+        await store.DeleteAsync();
+    }
+
+    private static async Task DeleteMissing()
+    {
+        using var fixture = new Fixture();
+        var directory = fixture.PathOf("not-created/nested");
+        var path = Path.Combine(directory, "latest.scan.json.gz");
+        var store = new FileScanResultStore(path);
+        await store.DeleteAsync();
+        await store.DeleteAsync();
+        Check(!Directory.Exists(fixture.PathOf("not-created")), "Deleting a missing cache created directories.");
+        Check(await store.LoadAsync() is null, "A missing cache was created by deletion.");
+    }
+
+    private static async Task DeleteCorrupt()
+    {
+        using var fixture = new Fixture();
+        var path = fixture.PathOf("corrupt.scan.json.gz");
+        await File.WriteAllTextAsync(path, "not a compressed snapshot");
+        var store = new FileScanResultStore(path);
+        Check(await store.ExistsAsync(), "A corrupt snapshot must still be detected without parsing it.");
+        await ThrowsAsync<InvalidDataException>(() => store.LoadAsync());
+        await store.DeleteAsync();
+        Check(!await store.ExistsAsync(), "A deleted corrupt snapshot was reported as present.");
+        Check(await new FileScanResultStore(path).LoadAsync() is null, "A corrupt snapshot could not be removed.");
+    }
+
+    private static async Task CancelledDelete()
+    {
+        using var fixture = new Fixture();
+        var path = fixture.PathOf("cache/latest.scan.json.gz");
+        var store = new FileScanResultStore(path);
+        await store.SaveAsync(SyntheticScan(fixture.Root, 100));
+        var before = await File.ReadAllBytesAsync(path);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await ThrowsAsync<OperationCanceledException>(() => store.DeleteAsync(cancellation.Token));
+
+        var after = await File.ReadAllBytesAsync(path);
+        Check(before.SequenceEqual(after), "Cancelled deletion changed the snapshot.");
+        Equal(100L, (await store.LoadAsync())!.Result.TotalBytes);
+        await store.DeleteAsync();
+        Check(await store.LoadAsync() is null, "Cancelled deletion left the mutation gate locked.");
+    }
+
+    private static async Task FailedDelete()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var fixture = new Fixture();
+        var path = fixture.PathOf("cache/latest.scan.json.gz");
+        var store = new FileScanResultStore(path);
+        await store.SaveAsync(SyntheticScan(fixture.Root, 100));
+        var before = await File.ReadAllBytesAsync(path);
+        await using (var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            try
+            {
+                await store.DeleteAsync();
+                throw new InvalidOperationException("Deleting a locked snapshot unexpectedly succeeded.");
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        }
+        var after = await File.ReadAllBytesAsync(path);
+        Check(before.SequenceEqual(after), "Failed deletion changed the snapshot.");
+        Equal(100L, (await store.LoadAsync())!.Result.TotalBytes);
+        await store.DeleteAsync();
+        Check(await store.LoadAsync() is null, "Failed deletion left the mutation gate locked.");
+    }
+
+    private static async Task DeleteAfterSave()
+    {
+        using var fixture = new Fixture();
+        var path = fixture.PathOf("cache/latest.scan.json.gz");
+        var store = new FileScanResultStore(path);
+        for (var index = 0; index < 16; index++)
+        {
+            var save = store.SaveAsync(SyntheticScan(fixture.Root, 100));
+            var delete = store.DeleteAsync();
+            await delete;
+            Check(!File.Exists(path), "Deletion completed while the preceding save was still visible.");
+            await save;
+            Check(await new FileScanResultStore(path).LoadAsync() is null, "An in-flight save restored a deleted snapshot.");
+        }
+        Equal(0, Directory.GetFiles(Path.GetDirectoryName(path)!).Length);
     }
 
     private static SavedScan SyntheticScan(string root, long bytes)
