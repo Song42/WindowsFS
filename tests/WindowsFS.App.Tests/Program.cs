@@ -1,4 +1,5 @@
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -40,6 +41,9 @@ internal static class Program
             ("Folder navigation, file-type totals, and filtered search stay consistent", Navigation),
             ("Case-distinct folder branches remain independently navigable after scan and restore", CaseDistinctNavigation),
             ("Treemap grouping preserves all represented bytes", GroupedMap),
+            ("Block and donut controls switch without rescanning or changing results", MapLayoutSwitching),
+            ("Donut sectors preserve byte proportions and exclude the center from navigation", DonutGeometry),
+            ("Donut rendering handles full circles, empty inputs and grouped small items", DonutEdgeCases),
             ("Changing target preserves a separately identified result scope", ResultScope),
             ("Cancellation returns a navigable partial result", Cancellation),
             ("Late progress from an earlier scan cannot overwrite a new scan", StaleProgress),
@@ -306,6 +310,180 @@ internal static class Program
             "The smaller folders were lost instead of grouped.");
         Check(vm.MapItems.Any(item => !item.IsDirectory && item.Size == 50),
             "Files directly in the selected folder were omitted.");
+    }
+
+    private static async Task MapLayoutSwitching()
+    {
+        var scanner = new StubScanner((_, _, _) => Task.FromResult(FixtureResult()));
+        var store = new StubStore();
+        var vm = CreateViewModel(scanner, store);
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            await vm.ScanAsync();
+            var content = (FrameworkElement)window.Content;
+            Render(content);
+            var map = Descendants<SpaceMap>(content).Single();
+            var binding = BindingOperations.GetBindingExpression(map, SpaceMap.LayoutModeProperty);
+            Check(binding is not null && binding.Status == BindingStatus.Active,
+                "The actual space map is not bound to the selected layout.");
+            Equal(SpaceMapLayout.Blocks, vm.MapLayout);
+            Equal(SpaceMapLayout.Blocks, map.LayoutMode);
+            Check(vm.IsBlockMap && !vm.IsDonutMap, "The default layout selection is inconsistent.");
+
+            var mapItems = vm.MapItems;
+            var rows = vm.Rows;
+            var scannedAt = vm.SnapshotDescription;
+            var donutButton = Descendants<ButtonBase>(content).Single(button =>
+                ReferenceEquals(button.Command, vm.SetMapLayoutCommand) && Equals(button.CommandParameter, "donut"));
+            var blockButton = Descendants<ButtonBase>(content).Single(button =>
+                ReferenceEquals(button.Command, vm.SetMapLayoutCommand) && Equals(button.CommandParameter, "blocks"));
+            donutButton.Command!.Execute(donutButton.CommandParameter);
+            Render(content);
+            Equal(SpaceMapLayout.Donut, map.LayoutMode);
+            Check(vm.IsDonutMap && !vm.IsBlockMap, "Donut selection was not reflected in the view model.");
+            Check(ReferenceEquals(mapItems, vm.MapItems) && ReferenceEquals(rows, vm.Rows),
+                "Changing the diagram unnecessarily rebuilt analysis results.");
+            Equal(scannedAt, vm.SnapshotDescription);
+            Equal(1_000L, map.Items!.Sum(item => item.Size));
+
+            vm.NavigateMap(vm.MapItems.Single(item => item.IsDirectory));
+            Equal(SpaceMapLayout.Donut, vm.MapLayout);
+            Equal(600L, vm.MapItems.Sum(item => item.Size));
+            vm.UpCommand.Execute(null);
+            Equal(SpaceMapLayout.Donut, vm.MapLayout);
+            foreach (var view in new[] { "files", "types", "folders", "overview" })
+            {
+                vm.NavigateCommand.Execute(view);
+                Render(content);
+                Equal(SpaceMapLayout.Donut, vm.MapLayout);
+                Equal(SpaceMapLayout.Donut, map.LayoutMode);
+            }
+            blockButton.Command!.Execute(blockButton.CommandParameter);
+            Render(content);
+            Equal(SpaceMapLayout.Blocks, map.LayoutMode);
+            Equal(1, scanner.ProgressReports.Count);
+            Equal(1, store.SaveCalls);
+            Equal(0, store.LoadCalls);
+            Check(!window.IsVisible, "Layout switching must not display a test window.");
+        }
+        finally { window.Close(); }
+    }
+
+    private static Task DonutGeometry()
+    {
+        MapItem[] items =
+        [
+            new("Large", "60 B", 60, $@"{FixturePath}\Large", true),
+            new("Medium", "30 B", 30, $@"{FixturePath}\Medium", true),
+            new("Small", "10 B", 10, $@"{FixturePath}\Small", true)
+        ];
+        var map = new SpaceMap { LayoutMode = SpaceMapLayout.Donut, Items = items };
+        var bitmap = RenderMap(map, new Size(340, 440));
+        var geometries = MapField<Geometry[]>(map, "_segments");
+        var center = MapField<Point>(map, "_donutCenter");
+        var radius = (MapField<double>(map, "_innerRadius") + MapField<double>(map, "_outerRadius")) / 2;
+        Equal(3, geometries.Length);
+        Equal(100L, MapField<long>(map, "_totalBytes"));
+        Equal(-1, MapHit(map, center));
+        Equal(-1, MapHit(map, new Point(-1, -1)));
+        var area = geometries.Sum(geometry => geometry.GetArea());
+        var cumulative = 0d;
+        MapItem? invoked = null;
+        map.ItemInvoked += (_, item) => invoked = item;
+        for (var index = 0; index < items.Length; index++)
+        {
+            var fraction = items[index].Size / 100d;
+            Check(Math.Abs(geometries[index].GetArea() / area - fraction) < 0.01,
+                "A donut sector does not represent its share of bytes.");
+            Check(!geometries[index].FillContains(center), "A donut sector covers the center hole.");
+            var angle = (cumulative + fraction / 2) * Math.Tau;
+            var point = new Point(center.X + Math.Sin(angle) * radius, center.Y - Math.Cos(angle) * radius);
+            Equal(index, MapHit(map, point));
+            Check(PixelAlpha(bitmap, point) > 0, "A clickable donut sector was not drawn.");
+            MapSelectAndInvoke(map, MapHit(map, point));
+            Check(ReferenceEquals(items[index], invoked), "The donut opened a different folder than the selected sector.");
+            cumulative += fraction;
+        }
+        invoked = null;
+        MapSelectAndInvoke(map, MapHit(map, center));
+        Check(invoked is null, "The donut's center invoked a folder.");
+        return Task.CompletedTask;
+    }
+
+    private static Task DonutEdgeCases()
+    {
+        var single = new MapItem("Only", "120 B", 120, $@"{FixturePath}\Only", true);
+        var map = new SpaceMap { LayoutMode = SpaceMapLayout.Donut, Items = [single] };
+        foreach (var size in new[] { new Size(340, 440), new Size(220, 180) })
+        {
+            RenderMap(map, size);
+            var center = MapField<Point>(map, "_donutCenter");
+            var outer = MapField<double>(map, "_outerRadius");
+            var inner = MapField<double>(map, "_innerRadius");
+            var radius = (inner + outer) / 2;
+            var geometry = MapField<Geometry[]>(map, "_segments").Single();
+            Check(Math.Abs(geometry.GetArea() / (Math.PI * (outer * outer - inner * inner)) - 1) < 0.01,
+                "One item did not form a complete donut ring.");
+            foreach (var vector in new[] { new Vector(1, 0), new Vector(0, 1), new Vector(-1, 0), new Vector(0, -1) })
+                Equal(0, MapHit(map, center + vector * radius));
+            Equal(-1, MapHit(map, center));
+        }
+
+        map.Items = [single with { Size = 0 }];
+        RenderMap(map, new Size(340, 440));
+        Equal(-1, MapHit(map, new Point(170, 100)));
+        Equal(0, MapField<MapItem[]>(map, "_items").Length);
+        map.Items = [];
+        RenderMap(map, new Size(340, 440));
+        Equal(-1, MapHit(map, new Point(170, 100)));
+
+        var many = Enumerable.Range(1, 50)
+            .Select(index => new MapItem($"Folder {index}", $"{index} B", index, $@"{FixturePath}\Folder{index}", true))
+            .ToArray();
+        map.Items = many;
+        RenderMap(map, new Size(340, 440));
+        var retained = MapField<MapItem[]>(map, "_items");
+        Equal(36, retained.Length);
+        Equal(many.Sum(item => item.Size), retained.Sum(item => item.Size));
+        Equal(many.Sum(item => item.Size), MapField<long>(map, "_totalBytes"));
+        Check(retained.Any(item => string.IsNullOrEmpty(item.Path)), "Small items were lost rather than grouped.");
+        var segments = MapField<Geometry[]>(map, "_segments");
+        Equal(retained.Length, segments.Length);
+        var totalArea = segments.Sum(geometry => geometry.GetArea());
+        for (var index = 0; index < retained.Length; index++)
+            Check(Math.Abs(segments[index].GetArea() / totalArea - (double)retained[index].Size / many.Sum(item => item.Size)) < 0.01,
+                "Grouping changed a donut sector's byte proportion.");
+        return Task.CompletedTask;
+    }
+
+    private static RenderTargetBitmap RenderMap(SpaceMap map, Size size)
+    {
+        map.Measure(size);
+        map.Arrange(new Rect(size));
+        map.UpdateLayout();
+        DrainDispatcher();
+        map.UpdateLayout();
+        var bitmap = new RenderTargetBitmap((int)size.Width, (int)size.Height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(map);
+        return bitmap;
+    }
+
+    // Hit testing and the rendered annular geometries have no public testing API.
+    private static T MapField<T>(SpaceMap map, string name) =>
+        (T)typeof(SpaceMap).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(map)!;
+    private static int MapHit(SpaceMap map, Point point) =>
+        (int)typeof(SpaceMap).GetMethod("HitTile", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(map, [point])!;
+    private static void MapSelectAndInvoke(SpaceMap map, int index)
+    {
+        typeof(SpaceMap).GetMethod("Select", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(map, [index]);
+        typeof(SpaceMap).GetMethod("InvokeSelected", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(map, null);
+    }
+    private static byte PixelAlpha(BitmapSource bitmap, Point point)
+    {
+        var bytes = new byte[4];
+        bitmap.CopyPixels(new Int32Rect((int)point.X, (int)point.Y, 1, 1), bytes, 4, 0);
+        return bytes[3];
     }
 
     private static async Task ResultScope()

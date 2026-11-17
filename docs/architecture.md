@@ -8,6 +8,10 @@ WindowsFS is a native Windows desktop application. The first release answers a f
 
 New analysis capabilities should use explicit service contracts. A future physical-allocation scanner, duplicate detector, or file-operation service should declare its own semantics and permissions. The first release has no dynamic plugin loading or arbitrary third-party code execution. Extensibility here means separate components and replaceable interfaces.
 
+## Space composition views
+
+`SpaceMap` draws either blocks or a donut using the same bounded `MapItem` collection and palette. Switching the layout changes presentation only: it does not scan, rebuild aggregates, or write a snapshot. The chosen layout stays active during folder and page navigation for the current session. Both layouts support folder activation and keyboard selection. Donut hit testing follows the ring sectors rather than their rectangular bounds, so its center and empty surroundings do not open folders. Small and grouped entries retain their represented bytes.
+
 ## System item explanations
 
 `SystemItemCatalog` is an in-memory catalog of source-backed explanations for known Windows paths. It matches an exact standard location and the item kind; it does not inherit a classification from a parent folder or classify a file by basename alone. The catalog does not read executable contents, inspect personal documents, query remote services, or infer an item's actual creator. Its management attribution describes the usual Windows component responsible for that standard location, with an explicit path-based match note and a primary Microsoft reference.

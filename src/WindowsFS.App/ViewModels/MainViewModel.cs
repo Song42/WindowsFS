@@ -79,6 +79,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private TimeSpan _elapsed;
     private IReadOnlyList<ResultRow> _rows = [];
     private IReadOnlyList<MapItem> _mapItems = [];
+    private SpaceMapLayout _mapLayout = SpaceMapLayout.Blocks;
     private ResultRow? _selectedRow;
     private SystemItemInfo? _systemInfo;
     private bool _systemInfoDismissed;
@@ -103,6 +104,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ChooseFolderCommand = new RelayCommand(_ => ChooseFolder(), _ => IsIdle);
         SelectDriveCommand = new RelayCommand(p => SelectPath(p as string), _ => IsIdle);
         NavigateCommand = new RelayCommand(p => { _view = p as string ?? "overview"; _search = ""; Changed(nameof(Search)); RefreshView(); });
+        SetMapLayoutCommand = new RelayCommand(p =>
+        {
+            if (p is "blocks") MapLayout = SpaceMapLayout.Blocks;
+            else if (p is "donut") MapLayout = SpaceMapLayout.Donut;
+        });
         OpenRowCommand = new RelayCommand(p => OpenRow(p as ResultRow ?? SelectedRow), _ => !IsBusy);
         RevealCommand = new RelayCommand(_ => RevealSelected(), _ => SelectedRow is { Path.Length: > 0 } && _view != "types");
         CopyPathCommand = new RelayCommand(_ => CopySelectedPath(), _ => SelectedRow is { Path.Length: > 0 } && _view != "types");
@@ -120,6 +126,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand ChooseFolderCommand { get; }
     public ICommand SelectDriveCommand { get; }
     public ICommand NavigateCommand { get; }
+    public ICommand SetMapLayoutCommand { get; }
     public ICommand OpenRowCommand { get; }
     public ICommand RevealCommand { get; }
     public ICommand CopyPathCommand { get; }
@@ -166,7 +173,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string TableTitle => _view switch { "folders" => "하위 폴더", "types" => "형식별 사용량", _ => "가장 큰 파일" };
     public string TableHint => _view == "folders" ? "선택: 시스템 항목 설명 · 두 번 클릭: 폴더 열기" : _view == "types" ? "확장자 없는 파일 포함" : "상위 1,000개 · 선택: 시스템 항목 설명";
     public string Breadcrumb => _folderPath ?? "분석한 모든 드라이브 / 폴더";
-    public string MapTitle => _view == "folders" ? "이 폴더의 공간 구성" : "용량 지도";
+    public string MapTitle => _view == "folders" ? "폴더 공간 구성" : "공간 구성";
+    public SpaceMapLayout MapLayout
+    {
+        get => _mapLayout;
+        private set
+        {
+            if (_mapLayout == value) return;
+            _mapLayout = value;
+            Changed(); Changed(nameof(IsBlockMap)); Changed(nameof(IsDonutMap)); Changed(nameof(MapHint));
+        }
+    }
+    public bool IsBlockMap => MapLayout == SpaceMapLayout.Blocks;
+    public bool IsDonutMap => MapLayout == SpaceMapLayout.Donut;
+    public string MapHint => IsDonutMap ? "각도 = 용량 비율 · 클릭: 폴더 열기" : "영역 크기 = 용량 · 클릭: 폴더 열기";
     public string ResultCount => $"{Rows.Count:N0}개 항목";
     public string Search { get => _search; set { if (_search == value) return; _search = value; Changed(); RefreshRows(); } }
     public IReadOnlyList<ResultRow> Rows { get => _rows; private set { _rows = value; Changed(); Changed(nameof(ResultCount)); Changed(nameof(NoRows)); } }

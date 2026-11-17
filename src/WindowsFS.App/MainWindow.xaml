@@ -179,11 +179,23 @@
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
                   </Grid.RowDefinitions>
-                  <StackPanel Margin="0,0,0,16">
-                    <TextBlock Text="{Binding MapTitle}" FontSize="15" FontWeight="SemiBold" />
-                    <TextBlock Text="영역 크기 = 용량 · 클릭: 폴더 열기" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,6,0,0" />
+                  <StackPanel Margin="0,0,0,12">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Text="{Binding MapTitle}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+                      <Border Grid.Column="1" Background="#111319" CornerRadius="8" Padding="3" Margin="8,0,0,0">
+                        <StackPanel Orientation="Horizontal">
+                          <Button Content="블록" Command="{Binding SetMapLayoutCommand}" CommandParameter="blocks" Tag="{Binding IsBlockMap}" Style="{StaticResource MapMode}" AutomationProperties.Name="블록 공간 구성" />
+                          <Button Content="도넛" Command="{Binding SetMapLayoutCommand}" CommandParameter="donut" Tag="{Binding IsDonutMap}" Style="{StaticResource MapMode}" AutomationProperties.Name="도넛 공간 구성" />
+                        </StackPanel>
+                      </Border>
+                    </Grid>
+                    <TextBlock Text="{Binding MapHint}" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,6,0,0" />
                   </StackPanel>
-                  <controls:SpaceMap Grid.Row="1" Items="{Binding MapItems}" ItemInvoked="MapItemInvoked" MinHeight="140" />
+                  <controls:SpaceMap Grid.Row="1" Items="{Binding MapItems}" LayoutMode="{Binding MapLayout}" ItemInvoked="MapItemInvoked" MinHeight="80" />
                   <TextBlock Grid.Row="2" Text="폴더별 합산 크기 · 0 B 항목은 지도에서 제외" Foreground="#768094" FontSize="10" Margin="0,13,0,0" />
                 </Grid>
               </Border>
