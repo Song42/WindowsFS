@@ -55,6 +55,8 @@ internal static partial class Program
             ("Dashboard cards and return navigation retain saved analysis without scanning", DashboardNavigation),
             ("Page headings remain aligned and hide duplicate titles and saved-status footer", RefinedPageHeadings),
             ("Resizable space maps preserve width and reserve room for results and details", ResponsiveSpaceMap),
+            ("Details resizing preserves width across selections without layout or scrollbar flicker", DetailsPanelResizing),
+            ("Right-side donut legends stay centered and preserve row hit testing", DonutLegendCentering),
             ("Breadcrumb navigation preserves exact indexed ancestors without scanning", BreadcrumbNavigation),
             ("Actual breadcrumb buttons navigate the saved folder tree", BreadcrumbXaml),
             ("Folder browsing reads metadata without changing the source tree", ReadOnlyFolderBrowsing),

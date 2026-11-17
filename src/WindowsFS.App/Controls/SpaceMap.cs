@@ -242,6 +242,12 @@ public sealed class SpaceMap : FrameworkElement
         _legendCount = Math.Min(_items.Length, (int)(_legendArea.Height / 24));
         if (_legendCount < _items.Length)
             _legendCount = Math.Max(0, Math.Min(_items.Length, (int)((_legendArea.Height - 18) / 24)));
+        if (ActualWidth >= 480 && ActualHeight >= 160)
+        {
+            var contentHeight = _legendCount * 24 + (_legendCount < _items.Length ? 18 : 0);
+            _legendArea.Y += Math.Max(0, (_legendArea.Height - contentHeight) / 2);
+            _legendArea.Height = Math.Min(_legendArea.Height, contentHeight);
+        }
         for (var index = 0; index < _legendCount; index++)
             _legendBounds[index] = new Rect(_legendArea.Left, _legendArea.Top + index * 24, _legendArea.Width, 24);
     }

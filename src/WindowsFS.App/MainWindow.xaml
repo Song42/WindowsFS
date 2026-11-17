@@ -185,25 +185,23 @@
                     <MultiBinding Converter="{StaticResource SpaceMapVisibility}" ConverterParameter="Width">
                       <Binding Path="IsMapVisible" />
                       <Binding Path="HasDetailPanel" />
-                      <Binding ElementName="MainContent" Path="ActualWidth" />
+                      <Binding ElementName="ResultColumns" Path="ActualWidth" />
                       <Binding Path="MapPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
+                      <Binding Path="DetailsPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
                     </MultiBinding>
                   </ColumnDefinition.Width>
                 </ColumnDefinition>
-                <ColumnDefinition Width="1.4*" MinWidth="480" />
+                <ColumnDefinition Width="*" MinWidth="480" />
                 <ColumnDefinition x:Name="DetailsColumn">
-                  <ColumnDefinition.Style>
-                    <Style TargetType="ColumnDefinition">
-                      <Setter Property="Width" Value="*" />
-                      <Setter Property="MinWidth" Value="342" />
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding HasDetailPanel}" Value="False">
-                          <Setter Property="Width" Value="0" />
-                          <Setter Property="MinWidth" Value="0" />
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </ColumnDefinition.Style>
+                  <ColumnDefinition.Width>
+                    <MultiBinding Converter="{StaticResource SpaceMapVisibility}" ConverterParameter="DetailsWidth">
+                      <Binding Path="IsMapVisible" />
+                      <Binding Path="HasDetailPanel" />
+                      <Binding ElementName="ResultColumns" Path="ActualWidth" />
+                      <Binding Path="MapPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
+                      <Binding Path="DetailsPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
+                    </MultiBinding>
+                  </ColumnDefinition.Width>
                 </ColumnDefinition>
               </Grid.ColumnDefinitions>
               <Border x:Name="SpaceMapPanel" Grid.Column="0" Style="{StaticResource Card}" Width="{Binding MapPanelWidth, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left" Padding="16" Margin="0,0,16,0">
@@ -211,8 +209,9 @@
                   <MultiBinding Converter="{StaticResource SpaceMapVisibility}">
                     <Binding Path="IsMapVisible" />
                     <Binding Path="HasDetailPanel" />
-                    <Binding ElementName="MainContent" Path="ActualWidth" />
+                    <Binding ElementName="ResultColumns" Path="ActualWidth" />
                     <Binding Path="MapPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
+                    <Binding Path="DetailsPanelWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
                   </MultiBinding>
                 </Border.Visibility>
                 <Grid>
@@ -241,7 +240,7 @@
                   <TextBlock Grid.Row="2" Text="폴더별 합산 크기 · 0 B 항목은 지도에서 제외" Foreground="#768094" FontSize="10" Margin="0,13,0,0" />
                 </Grid>
               </Border>
-              <Thumb x:Name="MapResizeHandle" Grid.Column="0" HorizontalAlignment="Right" Width="16" Cursor="SizeWE" Focusable="True" DragDelta="MapResizeDragDelta" KeyDown="MapResizeKeyDown" ToolTip="공간 구성 너비" AutomationProperties.Name="공간 구성 너비 조절" Visibility="{Binding Visibility, ElementName=SpaceMapPanel}">
+              <Thumb x:Name="MapResizeHandle" Grid.Column="0" HorizontalAlignment="Right" Width="16" Cursor="SizeWE" Focusable="True" DragStarted="PanelResizeStarted" DragCompleted="PanelResizeCompleted" DragDelta="MapResizeDragDelta" KeyDown="MapResizeKeyDown" ToolTip="공간 구성 너비" AutomationProperties.Name="공간 구성 너비 조절" Visibility="{Binding Visibility, ElementName=SpaceMapPanel}">
                 <Thumb.Template>
                   <ControlTemplate TargetType="Thumb">
                     <Border Background="Transparent">
@@ -289,7 +288,7 @@
                     </TextBox.Style>
                   </TextBox>
                   <Grid Grid.Row="2">
-                    <DataGrid x:Name="ResultsGrid" ItemsSource="{Binding DisplayRows}" Sorting="ResultsSorting" SelectedItem="{Binding SelectedRow}" PreviewMouseLeftButtonDown="ResultsMouseDown" MouseDoubleClick="ResultsDoubleClick" KeyDown="ResultsKeyDown" AutomationProperties.Name="분석 결과 목록">
+                    <DataGrid x:Name="ResultsGrid" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ItemsSource="{Binding DisplayRows}" Sorting="ResultsSorting" SelectedItem="{Binding SelectedRow}" PreviewMouseLeftButtonDown="ResultsMouseDown" MouseDoubleClick="ResultsDoubleClick" KeyDown="ResultsKeyDown" AutomationProperties.Name="분석 결과 목록">
                       <DataGrid.Columns>
                         <DataGridTemplateColumn Header="이름" Width="*" SortMemberPath="Name">
                           <DataGridTemplateColumn.CellTemplate>
@@ -332,6 +331,7 @@
                   </Border>
                 </Grid>
               </Border>
+              <Thumb x:Name="DetailsResizeHandle" Grid.Column="2" HorizontalAlignment="Left" Width="16" Cursor="SizeWE" Focusable="True" Template="{Binding Template, ElementName=MapResizeHandle}" DragStarted="PanelResizeStarted" DragCompleted="PanelResizeCompleted" DragDelta="DetailsResizeDragDelta" KeyDown="DetailsResizeKeyDown" ToolTip="세부정보 너비" AutomationProperties.Name="세부정보 너비 조절" Visibility="{Binding HasDetailPanel, Converter={StaticResource Visible}}" />
               <Border x:Name="SystemInfoPanel" Grid.Column="2" Style="{StaticResource Card}" Margin="16,0,0,0" Padding="18" Visibility="{Binding HasDetailPanel, Converter={StaticResource Visible}}">
                 <Grid>
                   <Grid.RowDefinitions>
@@ -344,7 +344,7 @@
                     </StackPanel>
                     <Button Content="✕" Command="{Binding DismissSystemInfoCommand}" HorizontalAlignment="Right" VerticalAlignment="Top" Padding="7,3" Background="Transparent" BorderThickness="0" AutomationProperties.Name="세부정보 닫기" />
                   </Grid>
-                  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,0,8,0">
                       <Expander x:Name="GeneralSection" Header="General" IsExpanded="{Binding GeneralExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
                         <StackPanel Margin="0,14,0,0" Visibility="{Binding HasDetails, Converter={StaticResource Visible}}">

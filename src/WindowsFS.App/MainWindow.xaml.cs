@@ -16,12 +16,21 @@ public partial class MainWindow : Window
     private bool _closeAfterPersistence;
     private bool _waitingForPersistence;
     private HwndSource? _windowSource;
+    private Thumb? _resizeThumb;
+    private double _resizePointerX, _resizeStartWidth;
     public static readonly DependencyProperty MapPanelWidthProperty = DependencyProperty.Register(
         nameof(MapPanelWidth), typeof(double), typeof(MainWindow), new PropertyMetadata(SpaceMapVisibilityConverter.MapWidth));
     public double MapPanelWidth
     {
         get => (double)GetValue(MapPanelWidthProperty);
         private set => SetValue(MapPanelWidthProperty, value);
+    }
+    public static readonly DependencyProperty DetailsPanelWidthProperty = DependencyProperty.Register(
+        nameof(DetailsPanelWidth), typeof(double), typeof(MainWindow), new PropertyMetadata(double.NaN));
+    public double DetailsPanelWidth
+    {
+        get => (double)GetValue(DetailsPanelWidthProperty);
+        private set => SetValue(DetailsPanelWidthProperty, value);
     }
     public MainWindow()
     {
@@ -82,21 +91,47 @@ public partial class MainWindow : Window
         if (e.ExtentWidthChange != 0 && sender is ScrollViewer scroll) scroll.ScrollToRightEnd();
     }
     private void MapItemInvoked(object? sender, MapItem e) => _viewModel.NavigateMap(e);
-    private void MapResizeDragDelta(object sender, DragDeltaEventArgs e) => ResizeMap(e.HorizontalChange);
+    private void PanelResizeStarted(object sender, DragStartedEventArgs e)
+    {
+        _resizeThumb = (Thumb)sender;
+        _resizePointerX = Mouse.GetPosition(ResultColumns).X;
+        _resizeStartWidth = ReferenceEquals(sender, MapResizeHandle) ? MapPanelWidth : SystemInfoPanel.ActualWidth;
+    }
+    private void PanelResizeCompleted(object sender, DragCompletedEventArgs e) => _resizeThumb = null;
+    private void MapResizeDragDelta(object sender, DragDeltaEventArgs e) => SetMapWidth(ReferenceEquals(_resizeThumb, sender)
+        ? _resizeStartWidth + Mouse.GetPosition(ResultColumns).X - _resizePointerX : MapPanelWidth + e.HorizontalChange);
+    private void DetailsResizeDragDelta(object sender, DragDeltaEventArgs e) => SetDetailsWidth(ReferenceEquals(_resizeThumb, sender)
+        ? _resizeStartWidth - (Mouse.GetPosition(ResultColumns).X - _resizePointerX) : SystemInfoPanel.ActualWidth - e.HorizontalChange);
     private void MapResizeKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key is not (Key.Left or Key.Right)) return;
-        ResizeMap(e.Key == Key.Left ? -10 : 10);
+        SetMapWidth(MapPanelWidth + (e.Key == Key.Left ? -10 : 10));
         e.Handled = true;
     }
-    private void ResizeMap(double change)
+    private void DetailsResizeKeyDown(object sender, KeyEventArgs e)
     {
-        if (!double.IsFinite(change) || SpaceMapPanel.Visibility != Visibility.Visible) return;
-        var reserved = SpaceMapVisibilityConverter.MinimumListWidth + 16 +
-            (DataContext is MainViewModel { HasDetailPanel: true } ? SpaceMapVisibilityConverter.SystemPanelColumnWidth : 0);
+        if (e.Key is not (Key.Left or Key.Right)) return;
+        SetDetailsWidth(SystemInfoPanel.ActualWidth + (e.Key == Key.Left ? 10 : -10));
+        e.Handled = true;
+    }
+    private void SetMapWidth(double width)
+    {
+        if (!double.IsFinite(width) || SpaceMapPanel.Visibility != Visibility.Visible) return;
+        var details = DataContext is MainViewModel { HasDetailPanel: true }
+            ? double.IsFinite(DetailsPanelWidth) ? DetailsPanelWidth + 16 : SpaceMapVisibilityConverter.SystemPanelColumnWidth : 0;
+        var reserved = SpaceMapVisibilityConverter.MinimumListWidth + 16 + details + SpaceMapVisibilityConverter.ResizeSlack;
         var maximum = Math.Max(SpaceMapVisibilityConverter.MinimumMapWidth,
-            Math.Min(SpaceMapVisibilityConverter.MaximumMapWidth, MainContent.ActualWidth - reserved));
-        MapPanelWidth = Math.Clamp(MapPanelWidth + change, SpaceMapVisibilityConverter.MinimumMapWidth, maximum);
+            Math.Min(SpaceMapVisibilityConverter.MaximumMapWidth, Math.Floor(ResultColumns.ActualWidth - reserved)));
+        MapPanelWidth = Math.Floor(Math.Clamp(width, SpaceMapVisibilityConverter.MinimumMapWidth, maximum));
+    }
+    private void SetDetailsWidth(double width)
+    {
+        if (!double.IsFinite(width) || DataContext is not MainViewModel { HasDetailPanel: true }) return;
+        var reserved = SpaceMapVisibilityConverter.MinimumListWidth + 16 + SpaceMapVisibilityConverter.ResizeSlack +
+            (SpaceMapPanel.Visibility == Visibility.Visible ? MapPanelWidth + 16 : 0);
+        var minimum = SpaceMapVisibilityConverter.SystemPanelColumnWidth - 16;
+        var maximum = Math.Max(minimum, Math.Floor(ResultColumns.ActualWidth - reserved));
+        DetailsPanelWidth = Math.Floor(Math.Clamp(width, minimum, maximum));
     }
     private void ResultsSorting(object sender, DataGridSortingEventArgs e)
     {

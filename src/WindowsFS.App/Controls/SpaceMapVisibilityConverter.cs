@@ -12,18 +12,29 @@ public sealed class SpaceMapVisibilityConverter : IMultiValueConverter
     public const double MaximumMapWidth = 960;
     public const double MinimumListWidth = 480;
     public const double SystemPanelColumnWidth = 326 + 16;
+    public const double ResizeSlack = 4;
 
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
     {
         var mapWidth = values.Length >= 4 && values[3] is double requested && double.IsFinite(requested)
             ? Math.Clamp(requested, MinimumMapWidth, MaximumMapWidth) : MapWidth;
         var columnWidth = mapWidth + 16;
-        var visible = values.Length >= 3 && values[0] is true && values[1] is bool hasSystemInfo &&
-            values[2] is double width && double.IsFinite(width) &&
-            width >= columnWidth + MinimumListWidth + (hasSystemInfo ? SystemPanelColumnWidth : 0);
-        return parameter as string == "Width"
-            ? new GridLength(visible ? columnWidth : 0)
-            : visible ? Visibility.Visible : Visibility.Collapsed;
+        var width = values.Length >= 3 && values[2] is double available && double.IsFinite(available) ? available : 0;
+        var hasDetails = values.Length >= 2 && values[1] is true;
+        var customDetails = values.Length >= 5 && values[4] is double preferred && double.IsFinite(preferred)
+            ? Math.Max(SystemPanelColumnWidth, preferred + 16) : double.NaN;
+        var reservedDetails = hasDetails ? double.IsFinite(customDetails) ? customDetails : SystemPanelColumnWidth : 0;
+        var visible = values.Length > 0 && values[0] is true &&
+            width >= columnWidth + MinimumListWidth + reservedDetails + ResizeSlack;
+        var remaining = Math.Max(0, width - (visible ? columnWidth : 0));
+        var details = hasDetails ? Math.Min(Math.Max(0, remaining - MinimumListWidth),
+            double.IsFinite(customDetails) ? customDetails : Math.Max(SystemPanelColumnWidth, remaining / 2.4)) : 0;
+        return (parameter as string) switch
+        {
+            "Width" => new GridLength(visible ? columnWidth : 0),
+            "DetailsWidth" => new GridLength(Math.Floor(details)),
+            _ => visible ? Visibility.Visible : Visibility.Collapsed
+        };
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
