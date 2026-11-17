@@ -185,10 +185,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string Skipped => _skipped.ToString("N0");
     public string ScanState => IsDeleting ? "삭제 중" : IsRestoring ? "불러오는 중" : IsSaving ? "저장 중" : IsBusy ? "분석 중" : _result is null ? "준비됨" : _result.IsCancelled ? "부분 결과" : _isRestored ? "저장된 분석" : "분석 완료";
     public string PageTitle => _view switch { "files" => "가장 큰 파일", "folders" => "폴더 탐색", "types" => "파일 형식", _ => "대시보드" };
-    public string PageDescription => _view switch { "files" => "최대 1,000개 · 용량순", "folders" => "폴더별 용량 · 두 번 클릭: 하위 폴더 열기", "types" => "확장자별 용량 합계", _ => "파일·폴더별 용량 분포" };
+    public string PageDescription => _view switch { "files" => "", "folders" => "폴더별 용량 · 두 번 클릭: 하위 폴더 열기", "types" => "확장자별 용량 합계", _ => "파일·폴더별 용량 분포" };
+    public bool ShowPageDescription => PageDescription.Length > 0;
+    public bool ShowScanControls => !IsFiles;
     public string TableTitle => _view switch { "folders" => "하위 폴더", "types" => "형식별 사용량", _ => "가장 큰 파일" };
     public bool ShowTableTitle => _view != "files";
-    public string TableHint => _view == "folders" ? "선택: 시스템 항목 설명 · 두 번 클릭: 폴더 열기" : _view == "types" ? "확장자 없는 파일 포함" : "상위 1,000개 · 선택: 시스템 항목 설명";
+    public string TableHint => _view == "folders" ? "선택: 시스템 항목 설명 · 두 번 클릭: 폴더 열기" : _view == "types" ? "확장자 없는 파일 포함" : "";
+    public bool ShowTableHint => TableHint.Length > 0;
     public string Breadcrumb => _folderPath ?? "분석한 모든 드라이브 / 폴더";
     public IReadOnlyList<BreadcrumbItem> BreadcrumbItems => _breadcrumbItems;
     public string MapTitle => _view == "folders" ? "폴더 공간 구성" : "공간 구성";
@@ -490,7 +493,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void RefreshView()
     {
         RefreshBreadcrumbs();
-        foreach (var name in new[] { nameof(PageTitle), nameof(PageDescription), nameof(TableTitle), nameof(ShowTableTitle), nameof(TableHint), nameof(ShowMap), nameof(ShowFolderNavigation), nameof(Breadcrumb), nameof(MapTitle), nameof(IsOverview), nameof(IsDetailView), nameof(IsFiles), nameof(IsFolders), nameof(IsTypes) }) Changed(name);
+        foreach (var name in new[] { nameof(PageTitle), nameof(PageDescription), nameof(ShowPageDescription), nameof(ShowScanControls), nameof(TableTitle), nameof(ShowTableTitle), nameof(TableHint), nameof(ShowTableHint), nameof(ShowMap), nameof(ShowFolderNavigation), nameof(Breadcrumb), nameof(MapTitle), nameof(IsOverview), nameof(IsDetailView), nameof(IsFiles), nameof(IsFolders), nameof(IsTypes) }) Changed(name);
         RefreshRows(); RefreshMap();
         Changed(nameof(IsMapVisible));
         CommandManager.InvalidateRequerySuggested();
