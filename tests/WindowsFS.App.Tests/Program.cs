@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using WindowsFS.App;
 using WindowsFS.App.Controls;
+using WindowsFS.App.Services;
 using WindowsFS.App.ViewModels;
 using WindowsFS.Core;
 using WindowsFS.Core.Persistence;
@@ -37,6 +38,11 @@ internal static class Program
         var tests = new (string Name, Func<Task> Run)[]
         {
             ("Actual XAML realizes read-only drive and result progress bindings", XamlSmoke),
+            ("Folder browsing reads metadata without changing the source tree", ReadOnlyFolderBrowsing),
+            ("Folder picker navigation and confirmation select the requested directory", FolderPickerNavigation),
+            ("Invalid picker paths never fall back to the previously visited folder", FolderPickerInvalidPaths),
+            ("Folder picker ignores stale reads and completion after cancellation", FolderPickerCancellation),
+            ("Actual folder picker XAML exposes navigation without file operations", FolderPickerXaml),
             ("Long file lists support precise wheel and scrollbar navigation at compact sizes", LongListScrolling),
             ("Folder navigation, file-type totals, and filtered search stay consistent", Navigation),
             ("Case-distinct folder branches remain independently navigable after scan and restore", CaseDistinctNavigation),
@@ -114,6 +120,8 @@ internal static class Program
             await vm.ScanAsync();
             Render(content);
             var grid = Descendants<DataGrid>(content).Single();
+            Check(grid.IsReadOnly && !grid.CanUserAddRows && !grid.CanUserDeleteRows && !grid.AllowDrop,
+                "The analysis result list exposed an edit, create, delete, or drop operation.");
             Equal(4, grid.Items.Count);
             Check(grid.ItemContainerGenerator.ContainerFromIndex(0) is DataGridRow,
                 "The actual result row template was not realized.");
@@ -137,6 +145,190 @@ internal static class Program
                 }
             }
             Check(!window.IsVisible, "The test must not display a native window.");
+        }
+        finally { window.Close(); }
+    }
+
+    private static async Task ReadOnlyFolderBrowsing()
+    {
+        using var fixture = new PickerFixture();
+        var child = Path.Combine(fixture.Root, "alpha");
+        var nested = Path.Combine(child, "nested");
+        var empty = Path.Combine(fixture.Root, "empty");
+        Directory.CreateDirectory(nested);
+        Directory.CreateDirectory(empty);
+        await File.WriteAllTextAsync(Path.Combine(fixture.Root, "keep.txt"), "Synthetic source content");
+        await File.WriteAllBytesAsync(Path.Combine(nested, "keep.bin"), [1, 2, 3, 4, 5]);
+        var before = CapturePickerTree(fixture.Root);
+        var browser = new ReadOnlyFolderBrowser();
+
+        var root = await browser.ReadAsync(fixture.Root);
+        Equal(fixture.Root, root.Path);
+        Check(root.Entries.Select(entry => entry.Name).Order().SequenceEqual(new[] { "alpha", "empty" }),
+            "The folder picker exposed files or omitted immediate subdirectories.");
+        var inside = await browser.ReadAsync(child);
+        Equal(fixture.Root, inside.ParentPath!);
+        Equal(1, inside.Entries.Count);
+        Equal(nested, inside.Entries[0].Path);
+        Equal(0, (await browser.ReadAsync(empty)).Entries.Count);
+
+        var missing = Path.Combine(fixture.Root, "never-created");
+        try
+        {
+            await browser.ReadAsync(missing);
+            throw new InvalidOperationException("A missing directory unexpectedly became browsable.");
+        }
+        catch (IOException) { }
+        Check(!Directory.Exists(missing), "Browsing a missing path created a directory.");
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        try
+        {
+            await browser.ReadAsync(fixture.Root, cancellation.Token);
+            throw new InvalidOperationException("A cancelled folder read unexpectedly succeeded.");
+        }
+        catch (OperationCanceledException) { }
+
+        var after = CapturePickerTree(fixture.Root);
+        Check(before.SequenceEqual(after), "Folder browsing changed names, contents, attributes, or write times in the source tree.");
+    }
+
+    private static async Task FolderPickerNavigation()
+    {
+        var childPath = $@"{FixturePath}\Child";
+        var grandchildPath = $@"{childPath}\Nested";
+        var root = new FolderLocation(FixturePath, @"X:\", [new FolderEntry("Child", childPath)]);
+        var child = new FolderLocation(childPath, FixturePath, [new FolderEntry("Nested", grandchildPath)]);
+        var grandchild = new FolderLocation(grandchildPath, childPath, []);
+        var browser = new StubFolderBrowser((path, _) => Task.FromResult(path switch
+        {
+            FixturePath => root,
+            var value when value == childPath => child,
+            var value when value == grandchildPath => grandchild,
+            _ => throw new DirectoryNotFoundException("Synthetic missing directory")
+        }));
+        var vm = new FolderPickerViewModel(FixturePath, [FixturePath], browser);
+        Equal(0, browser.Calls.Count);
+        await vm.InitializeAsync();
+        Equal(FixturePath, vm.CurrentPath);
+        Equal(1, vm.Entries.Count);
+        Check(vm.IsIdle && !vm.IsLoading, "Initial folder navigation did not settle.");
+        Check(await vm.NavigateAsync(childPath), "An existing child could not be entered.");
+        Equal(childPath, vm.CurrentPath);
+        Equal(FixturePath, vm.ParentPath!);
+        Check(await vm.NavigateAsync(vm.ParentPath!), "Parent navigation failed.");
+        vm.SelectedEntry = vm.Entries.Single();
+        Check(await vm.ConfirmAsync(), "A selected child directory could not be confirmed.");
+        Equal(childPath, vm.SelectedPath!);
+        Check(browser.Calls.Count(call => call.Path == childPath) >= 2,
+            "Confirmation did not revalidate the selected directory.");
+
+        var typed = new FolderPickerViewModel(FixturePath, [FixturePath], browser);
+        await typed.InitializeAsync();
+        typed.SelectedEntry = typed.Entries.Single();
+        typed.PathInput = grandchildPath;
+        Check(typed.SelectedEntry is null, "Typing a path retained an unrelated row selection.");
+        Check(await typed.ConfirmAsync(), "A directly entered existing path could not be selected.");
+        Equal(grandchildPath, typed.SelectedPath!);
+    }
+
+    private static async Task FolderPickerInvalidPaths()
+    {
+        foreach (var error in new Exception[]
+        {
+            new DirectoryNotFoundException(@"Synthetic missing X:\Private\directory"),
+            new UnauthorizedAccessException(@"Synthetic denied X:\Private\directory"),
+            new IOException(@"Synthetic unavailable X:\Private\directory"),
+            new ArgumentException(@"Synthetic invalid X:\Private\directory")
+        })
+        {
+            var browser = new StubFolderBrowser((path, _) => path == FixturePath
+                ? Task.FromResult(new FolderLocation(FixturePath, @"X:\", []))
+                : Task.FromException<FolderLocation>(error));
+            var vm = new FolderPickerViewModel(FixturePath, [FixturePath], browser);
+            await vm.InitializeAsync();
+            vm.PathInput = $@"{FixturePath}\Invalid";
+            Check(!await vm.ConfirmAsync(), "An invalid typed path confirmed the previous valid directory.");
+            Check(vm.SelectedPath is null, "Failed confirmation exposed an old selection.");
+            Equal(FixturePath, vm.CurrentPath);
+            Check(vm.IsIdle && !vm.IsLoading, "A rejected path left the picker busy.");
+            Check(!vm.Status.Contains("Synthetic", StringComparison.Ordinal) &&
+                !vm.Status.Contains(@"X:\Private", StringComparison.Ordinal), "Raw folder errors leaked private paths.");
+            vm.PathInput = FixturePath;
+            Check(await vm.ConfirmAsync(), "A failed path selection prevented a valid retry.");
+            Equal(FixturePath, vm.SelectedPath!);
+        }
+
+        var missingChild = $@"{FixturePath}\Removed";
+        var vanished = new StubFolderBrowser((path, _) => path == FixturePath
+            ? Task.FromResult(new FolderLocation(FixturePath, @"X:\", [new FolderEntry("Removed", missingChild)]))
+            : Task.FromException<FolderLocation>(new DirectoryNotFoundException("Synthetic removed directory")));
+        var selection = new FolderPickerViewModel(FixturePath, [FixturePath], vanished);
+        await selection.InitializeAsync();
+        selection.SelectedEntry = selection.Entries.Single();
+        Check(!await selection.ConfirmAsync() && selection.SelectedPath is null,
+            "A directory removed after listing was accepted without validation.");
+    }
+
+    private static async Task FolderPickerCancellation()
+    {
+        var slowPath = $@"{FixturePath}\Slow";
+        var fastPath = $@"{FixturePath}\Fast";
+        var slow = new TaskCompletionSource<FolderLocation>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var browser = new StubFolderBrowser((path, _) => path == slowPath ? slow.Task :
+            Task.FromResult(new FolderLocation(path, FixturePath, [])));
+        var vm = new FolderPickerViewModel(FixturePath, [FixturePath], browser);
+        await vm.InitializeAsync();
+        var older = vm.NavigateAsync(slowPath);
+        Check(vm.IsLoading, "A pending directory read did not report its busy state.");
+        Check(await vm.NavigateAsync(fastPath), "New navigation could not supersede a pending directory read.");
+        Check(browser.Calls.Single(call => call.Path == slowPath).Token.IsCancellationRequested,
+            "Superseded folder navigation was not cancelled.");
+        slow.TrySetResult(new FolderLocation(slowPath, FixturePath, [new FolderEntry("Old", slowPath + "\\Old")]));
+        await older;
+        Equal(fastPath, vm.CurrentPath);
+        Equal(0, vm.Entries.Count);
+        Check(vm.IsIdle, "Stale completion left the picker busy.");
+
+        var closing = new TaskCompletionSource<FolderLocation>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var closingBrowser = new StubFolderBrowser((path, _) => path == slowPath ? closing.Task :
+            Task.FromResult(new FolderLocation(path, FixturePath, [])));
+        var cancelled = new FolderPickerViewModel(FixturePath, [FixturePath], closingBrowser);
+        await cancelled.InitializeAsync();
+        cancelled.PathInput = slowPath;
+        var confirmation = cancelled.ConfirmAsync();
+        cancelled.Cancel();
+        Check(closingBrowser.Calls.Single(call => call.Path == slowPath).Token.IsCancellationRequested,
+            "Closing the picker did not cancel outstanding validation.");
+        closing.TrySetResult(new FolderLocation(slowPath, FixturePath, []));
+        Check(!await confirmation && cancelled.SelectedPath is null,
+            "A late directory read accepted a selection after cancellation.");
+        Equal(FixturePath, cancelled.CurrentPath);
+    }
+
+    private static async Task FolderPickerXaml()
+    {
+        var browser = new StubFolderBrowser((path, _) => Task.FromResult(new FolderLocation(path, null,
+            [new FolderEntry("Child", $@"{FixturePath}\Child")])));
+        var vm = new FolderPickerViewModel(FixturePath, [FixturePath], browser);
+        var window = new FolderPickerWindow(vm);
+        try
+        {
+            var content = (FrameworkElement)window.Content;
+            Render(content);
+            Equal(0, browser.Calls.Count);
+            await vm.InitializeAsync();
+            Render(content);
+            var list = Descendants<ListBox>(content).Single(control => ReferenceEquals(control.ItemsSource, vm.Entries));
+            Equal(1, list.Items.Count);
+            Check(!list.AllowDrop && list.ContextMenu is null && !window.AllowDrop,
+                "The folder picker exposed shell drop or context-menu operations.");
+            Check(!Descendants<FrameworkElement>(content).Any(element => element.AllowDrop),
+                "A folder picker element accepted filesystem drops.");
+            Check(!Descendants<Button>(content).Any(button => button.Content is string label &&
+                new[] { "새 폴더", "삭제", "이름 변경", "잘라내기", "붙여넣기" }.Any(label.Contains)),
+                "The folder picker exposes a filesystem mutation button.");
+            Check(!window.IsVisible, "Folder picker tests must not display a native window.");
         }
         finally { window.Close(); }
     }
@@ -1261,6 +1453,45 @@ internal static class Program
 
     private static void Equal<T>(T expected, T actual) where T : notnull =>
         Check(EqualityComparer<T>.Default.Equals(expected, actual), $"Expected {expected}, got {actual}.");
+
+    private static string[] CapturePickerTree(string root) => Directory.EnumerateFileSystemEntries(root, "*",
+            SearchOption.AllDirectories).Prepend(root).Order(StringComparer.Ordinal).Select(path =>
+        {
+            var attributes = File.GetAttributes(path);
+            var contents = (attributes & FileAttributes.Directory) != 0 ? "directory" :
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path)));
+            return $"{Path.GetRelativePath(root, path)}|{attributes}|{File.GetLastWriteTimeUtc(path).Ticks}|{contents}";
+        }).ToArray();
+
+    private sealed class PickerFixture : IDisposable
+    {
+        private readonly string _baseDirectory = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "WindowsFSPickerTests"));
+        public string Root { get; }
+
+        public PickerFixture()
+        {
+            Root = Path.Combine(_baseDirectory, Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Root);
+        }
+
+        public void Dispose()
+        {
+            var path = Path.GetFullPath(Root);
+            Check(path.StartsWith(_baseDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase),
+                "The fixture cleanup target escaped its dedicated temporary directory.");
+            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        }
+    }
+
+    private sealed class StubFolderBrowser(Func<string, CancellationToken, Task<FolderLocation>> read) : IReadOnlyFolderBrowser
+    {
+        public List<(string Path, CancellationToken Token)> Calls { get; } = [];
+        public Task<FolderLocation> ReadAsync(string path, CancellationToken cancellationToken = default)
+        {
+            Calls.Add((path, cancellationToken));
+            return read(path, cancellationToken);
+        }
+    }
 
     private sealed class StubScanner(Func<IEnumerable<string>, IProgress<ScanProgress>?, CancellationToken, Task<ScanResult>> scan) : IDiskScanner
     {

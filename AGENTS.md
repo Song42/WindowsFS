@@ -1,0 +1,20 @@
+# WindowsFS project rules
+
+## Permanent read-only product boundary
+
+The user requires WindowsFS to remain a read-only analyzer of user and system files. This applies to all future versions and extensions, not just the initial release.
+
+- Do not add creation, deletion, recycling, copying, moving, renaming, editing, permission changes, or other mutations of analyzed files and directories.
+- Do not expose these operations through buttons, keyboard shortcuts, context menus, drag-and-drop, shell dialogs, external commands, plugins, or background jobs.
+- Use the app's read-only folder picker. Native Windows file/folder dialogs expose shell operations such as creating a folder and must not be used for target selection.
+- Scanning and folder browsing read filesystem metadata only. Never open analyzed file contents for writing.
+- Runtime filesystem writes are limited to the app-owned analysis cache: `%LOCALAPPDATA%\WindowsFS\Cache\latest.scan.json.gz`, its containing directory, and uniquely named temporary files used for atomic cache replacement.
+- Deleting a saved analysis removes only the configured cache file and in-memory results. Never derive a write/delete target from a scan result, selected row, selected scan root, search text, or snapshot contents. Never recursively delete a cache directory.
+- Explorer integration may only reveal a selected path. Clipboard integration may only copy the path text. Official help links may only open documentation; do not execute cleanup commands.
+
+## Verification and privacy
+
+- Review every new filesystem or shell call against the read-only boundary and the narrow cache exception.
+- Test filesystem behavior only with isolated synthetic temporary fixtures. Never test creation/deletion using the user's files or real analysis cache.
+- Keep UI text limited to concise functional descriptions and statuses; do not add service, promotional, or imperative guidance messages.
+- Do not commit private file paths, scan caches, personal inventories, credentials, screenshots, or build output. Check `.gitignore` and the staged diff before uploading changes.

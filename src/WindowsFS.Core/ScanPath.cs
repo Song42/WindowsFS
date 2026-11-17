@@ -1,7 +1,7 @@
 namespace WindowsFS.Core;
 
 /// <summary>Preserves literal filesystem names while separating Windows access and display paths.</summary>
-internal static class ScanPath
+public static class ScanPath
 {
     public static string NormalizeRoot(string path)
     {

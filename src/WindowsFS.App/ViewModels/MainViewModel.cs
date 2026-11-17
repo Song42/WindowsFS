@@ -6,7 +6,6 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
-using Microsoft.Win32;
 using WindowsFS.App.Controls;
 using WindowsFS.Core;
 using WindowsFS.Core.Persistence;
@@ -459,9 +458,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void ChooseFolder()
     {
-        var dialog = new OpenFolderDialog { Title = "분석할 폴더 선택", Multiselect = false };
-        if (dialog.ShowDialog(Application.Current.MainWindow) != true) return;
-        SelectPath(dialog.FolderName);
+        var dialog = new FolderPickerWindow(_selectedPath, Drives.Select(drive => drive.Path))
+        {
+            Owner = Application.Current.MainWindow
+        };
+        if (dialog.ShowDialog() != true || dialog.SelectedPath is null) return;
+        SelectPath(dialog.SelectedPath);
         CommandManager.InvalidateRequerySuggested();
     }
 
