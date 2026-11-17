@@ -36,6 +36,7 @@ public enum FolderNavigationKind { None, Current, Parent }
 public sealed record ResultRow(string Name, string Path, long Bytes, long Count, bool IsDirectory, string Kind, double Share)
 {
     public FolderNavigationKind Navigation { get; init; }
+    public bool IsLiveMetadata { get; init; }
     public string Size => DisplayFormat.Bytes(Bytes);
     public string CountText => Count < 0 ? Kind : $"{Count:N0}개 파일";
     public string ShareText => $"{Share:0.0}%";
@@ -92,6 +93,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private ResultRow? _selectedRow;
     private ResultRow? _currentFolderRow;
     private ResultRow? _parentFolderRow;
+    private readonly IReadOnlyFileBrowser? _fileBrowser;
+    private readonly Dictionary<string, IReadOnlyList<FileRecord>> _folderFiles = new(StringComparer.Ordinal);
+    private CancellationTokenSource? _fileListCancellation;
+    private Task _fileListTask = Task.CompletedTask;
+    private string _fileListStatus = "";
     private ResultRow? DetailRow => _view == "types" ? null : _selectedRow?.Navigation switch
     {
         FolderNavigationKind.Current => _currentFolderRow,
@@ -114,13 +120,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public MainViewModel() : this(new DiskScanner(), new FileScanResultStore(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "WindowsFS", "Cache", "latest.scan.json.gz")), detailsReader: new ItemDetailsReader()) { }
+        "WindowsFS", "Cache", "latest.scan.json.gz")), detailsReader: new ItemDetailsReader(), fileBrowser: new ReadOnlyFileBrowser()) { }
 
     // Injected scanners use an explicit store so tests and alternative hosts never write a user's cache implicitly.
-    public MainViewModel(IDiskScanner scanner, IScanResultStore? store = null, SystemItemCatalog? systemCatalog = null, ItemDetailsReader? detailsReader = null)
+    public MainViewModel(IDiskScanner scanner, IScanResultStore? store = null, SystemItemCatalog? systemCatalog = null, ItemDetailsReader? detailsReader = null,
+        IReadOnlyFileBrowser? fileBrowser = null)
     {
         _scanner = scanner;
         _detailsReader = detailsReader;
+        _fileBrowser = fileBrowser;
         PreviewCommand = new RelayCommand(async _ => await LoadPreviewAsync(), _ => CanPreview && !_previewBusy);
         _store = store;
         _systemCatalog = systemCatalog ?? new SystemItemCatalog();
@@ -213,7 +221,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string PageDescription => _view switch { "files" => "", "folders" => "폴더별 용량 · 두 번 클릭: 하위 폴더 열기", "types" => "확장자별 용량 합계", _ => "파일·폴더별 용량 분포" };
     public bool ShowPageDescription => PageDescription.Length > 0;
     public bool ShowScanControls => !IsFiles;
-    public string TableTitle => _view switch { "folders" => "하위 폴더", "types" => "형식별 사용량", _ => "가장 큰 파일" };
+    public string TableTitle => _view switch { "folders" => "폴더 및 파일", "types" => "형식별 사용량", _ => "가장 큰 파일" };
     public bool ShowTableTitle => _view != "files";
     public string TableHint => _view == "folders" ? "선택: 시스템 항목 설명 · 두 번 클릭: 폴더 열기" : _view == "types" ? "확장자 없는 파일 포함" : "";
     public bool ShowTableHint => TableHint.Length > 0;
@@ -233,7 +241,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsBlockMap => MapLayout == SpaceMapLayout.Blocks;
     public bool IsDonutMap => MapLayout == SpaceMapLayout.Donut;
     public string MapHint => IsDonutMap ? "각도 = 용량 비율 · 클릭: 폴더 열기" : "영역 크기 = 용량 · 클릭: 폴더 열기";
-    public string ResultCount => $"{Rows.Count:N0}개 항목";
+    public string ResultCount => $"{Rows.Count:N0}개 항목" + (IsFolders && _fileListStatus.Length > 0 ? $" · {_fileListStatus}" : "");
     public string Search { get => _search; set { if (_search == value) return; _search = value; Changed(); RefreshRows(); } }
     public IReadOnlyList<ResultRow> Rows { get => _rows; private set { _rows = value; RefreshDisplayRows(); Changed(); Changed(nameof(ResultCount)); Changed(nameof(NoRows)); } }
     public IReadOnlyList<ResultRow> DisplayRows { get; private set; } = [];
@@ -330,6 +338,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _scanCancellation = cancellation;
         IsBusy = true;
         _result = null;
+        _fileListCancellation?.Cancel();
+        _folderFiles.Clear();
+        _fileListStatus = "";
         _isRestored = _snapshotSaved = false;
         _scannedAtUtc = null;
         Changed(nameof(SnapshotDescription));
@@ -399,7 +410,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    public void Cancel() => _scanCancellation?.Cancel();
+    public void Cancel() { _scanCancellation?.Cancel(); _fileListCancellation?.Cancel(); }
 
     public Task WaitForPendingSaveAsync() => _pendingSave ?? Task.CompletedTask;
 
@@ -422,6 +433,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             await _store!.DeleteAsync();
             HasSavedAnalysis = false;
             _result = null;
+            _folderFiles.Clear();
             _folders.Clear(); _parents.Clear(); _folderPath = null;
             _resultScope = "";
             _search = "";
@@ -466,6 +478,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         // Indexing a saved tree does not touch any scanned paths or read their current metadata.
         var index = await Task.Run(() => IndexFolders(result.Roots));
         _result = result;
+        _folderFiles.Clear();
         _folders = index.Folders; _parents = index.Parents;
         _folderPath = null;
         _bytes = result.TotalBytes; _files = result.FileCount; _folderCount = result.FolderCount;
@@ -524,6 +537,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         RefreshBreadcrumbs();
         foreach (var name in new[] { nameof(PageTitle), nameof(PageDescription), nameof(ShowPageDescription), nameof(ShowScanControls), nameof(TableTitle), nameof(ShowTableTitle), nameof(TableHint), nameof(ShowTableHint), nameof(ShowMap), nameof(ShowFolderNavigation), nameof(Breadcrumb), nameof(MapTitle), nameof(IsOverview), nameof(IsDetailView), nameof(IsFiles), nameof(IsFolders), nameof(IsTypes) }) Changed(name);
         RefreshRows(); RefreshMap();
+        _fileListTask = LoadFolderFilesAsync();
         Changed(nameof(IsMapVisible));
         CommandManager.InvalidateRequerySuggested();
     }
@@ -609,7 +623,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             fields.Add(new("전체 경로", row.Path));
             fields.Add(new("상위 폴더", Path.GetDirectoryName(row.Path) ?? row.Path));
             fields.Add(new("종류", row.IsDirectory ? "폴더" : row.Kind));
-            fields.Add(new("분석 당시 크기 · 논리적", $"{row.Size} ({row.Bytes:N0} B)"));
+            fields.Add(new(row.IsLiveMetadata ? "폴더를 연 시점 크기 · 논리적" : "분석 당시 크기 · 논리적", $"{row.Size} ({row.Bytes:N0} B)"));
             fields.Add(new("전체 분석 대비", row.ShareText));
             if (row.IsDirectory) fields.Add(new("포함 파일 · 분석 당시", row.CountText));
         }
@@ -662,8 +676,51 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private double Share(long bytes) => _bytes > 0 ? (double)bytes / _bytes * 100 : 0;
 
-    private void RefreshRows()
+    public Task WaitForFolderFilesAsync() => _fileListTask;
+
+    private async Task LoadFolderFilesAsync()
     {
+        _fileListCancellation?.Cancel();
+        _fileListCancellation?.Dispose();
+        _fileListCancellation = null;
+        _fileListStatus = "";
+        Changed(nameof(ResultCount));
+        if (!IsFolders || _result is null || _folderPath is null || _fileBrowser is null ||
+            !_folders.ContainsKey(_folderPath) || _folderFiles.ContainsKey(_folderPath)) return;
+        var path = _folderPath;
+        var result = _result;
+        var cancellation = _fileListCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var token = cancellation.Token;
+        _fileListStatus = "파일 읽는 중";
+        Changed(nameof(ResultCount));
+        try
+        {
+            var files = await _fileBrowser.ReadAsync(path, token).WaitAsync(token);
+            if (token.IsCancellationRequested || !ReferenceEquals(result, _result)) return;
+            _folderFiles[path] = files;
+            if (IsFolders && _folderPath == path) RefreshRows(preserveSelection: true);
+        }
+        catch (OperationCanceledException)
+        {
+            if (ReferenceEquals(cancellation, _fileListCancellation)) _fileListStatus = "파일 읽기 중단";
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException or ArgumentException or NotSupportedException)
+        {
+            if (ReferenceEquals(cancellation, _fileListCancellation)) _fileListStatus = "파일 목록 접근 불가";
+        }
+        finally
+        {
+            if (ReferenceEquals(cancellation, _fileListCancellation))
+            {
+                if (_fileListStatus == "파일 읽는 중") _fileListStatus = "";
+                Changed(nameof(ResultCount));
+            }
+        }
+    }
+
+    private void RefreshRows(bool preserveSelection = false)
+    {
+        var selection = preserveSelection ? SelectedRow : null;
         _currentFolderRow = _view == "folders" && _result is not null && _folderPath is not null &&
             _folders.TryGetValue(_folderPath, out var folder)
             ? new ResultRow(folder.Name, folder.Path, folder.TotalBytes, folder.FileCount, true, "폴더", Share(folder.TotalBytes))
@@ -672,12 +729,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (_result is null) { Rows = []; return; }
         IEnumerable<ResultRow> rows = _view switch
         {
-            "folders" => ScopeFolders().Select(n => new ResultRow(n.Name, n.Path, n.TotalBytes, n.FileCount, true, "폴더", Share(n.TotalBytes))),
+            "folders" => ScopeFolders().Select(n => new ResultRow(n.Name, n.Path, n.TotalBytes, n.FileCount, true, "폴더", Share(n.TotalBytes)))
+                .Concat(_folderPath is not null && _folderFiles.TryGetValue(_folderPath, out var files)
+                    ? files.Select(f => new ResultRow(f.Name, f.Path, f.Size, -1, false,
+                        string.IsNullOrEmpty(f.Extension) ? "파일" : f.Extension, Share(f.Size)) { IsLiveMetadata = true }) : [])
+                .OrderByDescending(row => row.Bytes).ThenBy(row => row.Name, StringComparer.OrdinalIgnoreCase),
             "types" => _result.FileTypes.Select(t => new ResultRow(string.IsNullOrEmpty(t.Extension) ? "확장자 없음" : t.Extension, "", t.TotalBytes, t.FileCount, false, "파일 형식", Share(t.TotalBytes))),
             _ => _result.LargestFiles.Select(f => new ResultRow(f.Name, f.Path, f.Size, -1, false, string.IsNullOrEmpty(f.Extension) ? "파일" : f.Extension, Share(f.Size)))
         };
         if (!string.IsNullOrWhiteSpace(_search)) rows = rows.Where(r => r.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) || r.Path.Contains(_search, StringComparison.OrdinalIgnoreCase));
         Rows = rows.ToArray();
+        if (selection is not null) SelectedRow = DisplayRows.FirstOrDefault(row => row.Path == selection.Path && row.Navigation == selection.Navigation);
     }
 
     private void RefreshDisplayRows()

@@ -45,6 +45,9 @@ internal static class Program
             ("Breadcrumb navigation preserves exact indexed ancestors without scanning", BreadcrumbNavigation),
             ("Actual breadcrumb buttons navigate the saved folder tree", BreadcrumbXaml),
             ("Folder browsing reads metadata without changing the source tree", ReadOnlyFolderBrowsing),
+            ("Immediate file browsing reads all file metadata without changing the source tree", ReadOnlyFileBrowsing),
+            ("Folder lists include files, preserve selection, and reuse reads without rescanning", FolderFiles),
+            ("Folder file reads ignore stale results and recover from inaccessible folders", FolderFileReadFailures),
             ("Folder picker navigation and confirmation select the requested directory", FolderPickerNavigation),
             ("Invalid picker paths never fall back to the previously visited folder", FolderPickerInvalidPaths),
             ("Folder picker ignores stale reads and completion after cancellation", FolderPickerCancellation),
@@ -566,6 +569,116 @@ internal static class Program
 
         var after = CapturePickerTree(fixture.Root);
         Check(before.SequenceEqual(after), "Folder browsing changed names, contents, attributes, or write times in the source tree.");
+    }
+
+    private static async Task ReadOnlyFileBrowsing()
+    {
+        using var fixture = new PickerFixture();
+        var nested = Directory.CreateDirectory(Path.Combine(fixture.Root, "nested")).FullName;
+        await File.WriteAllBytesAsync(Path.Combine(fixture.Root, "sample.bin"), [1, 2, 3]);
+        await File.WriteAllTextAsync(Path.Combine(fixture.Root, "no-extension"), "");
+        var hidden = Path.Combine(fixture.Root, ".hidden.txt");
+        await File.WriteAllTextAsync(hidden, "hidden");
+        File.SetAttributes(hidden, FileAttributes.Hidden | FileAttributes.System);
+        await File.WriteAllTextAsync(Path.Combine(nested, "nested.txt"), "not immediate");
+        var before = CapturePickerTree(fixture.Root);
+        var browser = new ReadOnlyFileBrowser();
+        var files = await browser.ReadAsync(fixture.Root);
+        Equal(3, files.Count);
+        Equal(3L, files.Single(file => file.Name == "sample.bin").Size);
+        Equal("", files.Single(file => file.Name == "no-extension").Extension);
+        Check(files.Any(file => file.Path == hidden), "Hidden/system files were omitted.");
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        try { await browser.ReadAsync(fixture.Root, cancellation.Token); throw new InvalidOperationException("Cancelled read succeeded."); }
+        catch (OperationCanceledException) { }
+        try { await browser.ReadAsync(Path.Combine(fixture.Root, "missing")); throw new InvalidOperationException("Missing folder read succeeded."); }
+        catch (IOException) { }
+        Check(before.SequenceEqual(CapturePickerTree(fixture.Root)), "File listing changed the synthetic source tree.");
+    }
+
+    private static async Task FolderFiles()
+    {
+        var path = $@"{FixturePath}\Projects";
+        var pending = new TaskCompletionSource<IReadOnlyList<FileRecord>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var browser = new StubFileBrowser((_, _) => pending.Task);
+        var scanner = new StubScanner((_, _, _) => throw new InvalidOperationException("Folder file navigation must not scan."));
+        var store = new StubStore(new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow));
+        var vm = new MainViewModel(scanner, store, fileBrowser: browser);
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            await vm.RestoreLastScanAsync();
+            Equal(0, browser.Calls.Count);
+            vm.NavigateMap(vm.MapItems.Single(item => item.IsDirectory));
+            var content = (FrameworkElement)window.Content;
+            Render(content);
+            var grid = (DataGrid)window.FindName("ResultsGrid");
+            grid.SelectedItem = vm.DisplayRows[1];
+            var files = Enumerable.Range(0, 1_005).Select(index =>
+                new FileRecord($@"{path}\file{index}.txt", $"file{index}.txt", index, ".txt")).ToArray();
+            pending.SetResult(files);
+            await vm.WaitForFolderFilesAsync();
+            Render(content);
+            Equal(1_006, vm.Rows.Count);
+            Equal(1_008, grid.Items.Count);
+            Equal(FolderNavigationKind.Current, ((ResultRow)grid.Items[0]).Navigation);
+            Equal(FolderNavigationKind.Parent, ((ResultRow)grid.Items[1]).Navigation);
+            Equal(FolderNavigationKind.Parent, vm.SelectedRow!.Navigation);
+            Equal("WindowsFSFixture", vm.Details.Single(field => field.Label == "이름").Value);
+            var file = vm.Rows.Single(row => row.Name == "file1004.txt");
+            Check(!file.IsDirectory && file.IsLiveMetadata && file.Bytes == 1_004, "A file was presented as a folder or stale scan metadata.");
+            grid.SelectedItem = file;
+            Render(content);
+            Equal(file.Name, vm.Details.Single(field => field.Label == "이름").Value);
+            Check(vm.CanPreview && vm.HasDetails && vm.Details.Any(field => field.Label == "폴더를 연 시점 크기 · 논리적"),
+                "File selection did not expose details and bounded preview availability.");
+            vm.Search = "file1004";
+            Equal(1, vm.Rows.Count);
+            vm.NavigateCommand.Execute("files");
+            Equal(4, vm.Rows.Count);
+            vm.NavigateBreadcrumbCommand.Execute(path);
+            await vm.WaitForFolderFilesAsync();
+            Equal(1_006, vm.Rows.Count);
+            Equal(1, browser.Calls.Count);
+            Equal(0, scanner.ProgressReports.Count);
+            Equal(0, store.SaveCalls);
+            await vm.DeleteSavedAnalysisAsync();
+            Equal(0, vm.DisplayRows.Count);
+        }
+        finally { window.Close(); }
+    }
+
+    private static async Task FolderFileReadFailures()
+    {
+        var path = $@"{FixturePath}\Projects";
+        var late = new TaskCompletionSource<IReadOnlyList<FileRecord>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fail = true;
+        var browser = new StubFileBrowser((folder, _) => folder == path ? late.Task :
+            fail ? Task.FromException<IReadOnlyList<FileRecord>>(new UnauthorizedAccessException()) : Task.FromResult<IReadOnlyList<FileRecord>>([]));
+        var vm = new MainViewModel(new StubScanner((_, _, _) => throw new InvalidOperationException("Unexpected scan")),
+            new StubStore(new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow)), fileBrowser: browser);
+        await vm.RestoreLastScanAsync();
+        vm.NavigateBreadcrumbCommand.Execute(path);
+        var previousRead = vm.WaitForFolderFilesAsync();
+        vm.NavigateBreadcrumbCommand.Execute($@"{FixturePath}\Empty");
+        await vm.WaitForFolderFilesAsync();
+        await previousRead;
+        Check(browser.Calls[0].Token.IsCancellationRequested, "Leaving a folder did not cancel its file read.");
+        Check(vm.ResultCount.Contains("접근 불가"), "Inaccessible files were silently presented as an empty folder.");
+        late.SetResult([new FileRecord($@"{path}\late.txt", "late.txt", 3, ".txt")]);
+        DrainDispatcher();
+        Equal(0, vm.Rows.Count);
+        fail = false;
+        vm.NavigateCommand.Execute("overview");
+        vm.NavigateCommand.Execute("folders");
+        await vm.WaitForFolderFilesAsync();
+        Equal("0개 항목", vm.ResultCount);
+        Equal(3, browser.Calls.Count);
+        vm.NavigateBreadcrumbCommand.Execute(path);
+        await vm.WaitForFolderFilesAsync();
+        Equal(4, browser.Calls.Count);
+        Check(vm.Rows.Any(row => row.Name == "late.txt"), "A cancelled read was incorrectly cached or could not be retried.");
     }
 
     private static async Task FolderPickerNavigation()
@@ -1917,6 +2030,16 @@ internal static class Program
             Check(path.StartsWith(_baseDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase),
                 "The fixture cleanup target escaped its dedicated temporary directory.");
             if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        }
+    }
+
+    private sealed class StubFileBrowser(Func<string, CancellationToken, Task<IReadOnlyList<FileRecord>>> read) : IReadOnlyFileBrowser
+    {
+        public List<(string Path, CancellationToken Token)> Calls { get; } = [];
+        public Task<IReadOnlyList<FileRecord>> ReadAsync(string path, CancellationToken cancellationToken = default)
+        {
+            Calls.Add((path, cancellationToken));
+            return read(path, cancellationToken);
         }
     }
 
