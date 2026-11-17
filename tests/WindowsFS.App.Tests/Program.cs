@@ -41,6 +41,8 @@ internal static partial class Program
             ("Image and PDF previews render bounded pages without source changes", ImageAndPdfPreviews),
             ("MP3 selection prepares compact audio controls without playback or source changes", AudioPreviews),
             ("MP3 previews reject playlists, broken frames and oversized inputs", AudioPreviewLimits),
+            ("Audio and video timelines seek, pause and replay beyond thirty seconds", MediaPlaybackTimeline),
+            ("Unknown media durations and decoder failures preserve playback lifecycle", UnknownMediaDuration),
             ("Office, HWPX and OpenDocument previews render formatted pages, tables and images without writes", DocumentPreviews),
             ("Document layout bounds reject expansion and external resources without source writes", DocumentLayoutLimits),
             ("Previews reject malformed, external and oversized content and never autoplay video", PreviewLimits),

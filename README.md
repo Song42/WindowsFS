@@ -125,8 +125,8 @@ scripts/                  로컬 실행 및 배포 스크립트
 | 종류 | 지원 형식과 범위 |
 | --- | --- |
 | 이미지 | PNG, JPG/JPEG, BMP, GIF, TIFF, ICO. 최대 64 MB·1억 픽셀, 긴 변 1,600픽셀로 축소. GIF/TIFF는 첫 프레임 |
-| 영상 | MP4/M4V, MOV, AVI, WMV, MKV, WebM 중 Windows 미디어 코덱이 지원하는 파일. 최대 2 GB, 처음 30초, 재생·일시정지·처음 버튼. 선택 변경·패널 숨김·종료 시 해제 |
-| 오디오 | MP3. 최대 64 MB, 처음 30초, 재생·일시정지·처음 버튼. 자동 재생 없음. 선택 변경·패널 숨김·종료 시 해제 |
+| 영상 | MP4/M4V, MOV, AVI, WMV, MKV, WebM 중 Windows 미디어 코덱이 지원하는 파일. 최대 2 GB, 재생 시간 제한 없음. 재생·일시정지·처음 버튼, 위치 이동 바, 현재 시간·전체 길이. 선택 변경·패널 숨김·종료 시 해제 |
+| 오디오 | MP3. 최대 64 MB, 재생 시간 제한 없음. 재생·일시정지·처음 버튼, 위치 이동 바, 현재 시간·전체 길이. 자동 재생 없음. 선택 변경·패널 숨김·종료 시 해제 |
 | PDF | 최대 64 MB, PDFium으로 페이지 표시와 이전·다음 이동. 링크·스크립트 실행 없음 |
 | 문서 | DOCX/DOCM, XLSX/XLSM, PPTX/PPTM, HWPX, ODT/ODS/ODP를 페이지 이미지로 표시. 글꼴·크기·색상·강조·문단 정렬, 표·셀 배경·병합, 삽입 이미지와 이전·다음 페이지 이동 |
 | 텍스트 | 기존 텍스트·소스 형식의 앞부분 64 KB, UTF-8/BOM. HTML도 텍스트로만 표시 |
@@ -138,6 +138,8 @@ scripts/                  로컬 실행 및 배포 스크립트
 미리보기 내용과 렌더링 이미지는 메모리에서만 처리하며 파일로 추출하거나 캐시에 저장·전송하지 않습니다. 링크·네트워크 경로·오프라인 파일은 제외합니다. 지원하지 않는 코덱, 손상·암호화·크기 제한 파일은 상태를 표시합니다. 디스크 할당 크기는 지원하지 않습니다.
 
 MP3는 ID3v2 태그(최대 8 MB)를 건너뛰고 연속된 MPEG Layer III 프레임을 확인합니다. CBR/VBR 및 MPEG-1/2/2.5 헤더를 지원하며 free-format 비트레이트와 잘린 프레임은 제외합니다. 태그만 있거나 MP3 확장자로 위장한 외부 재생목록은 재생하지 않습니다.
+
+재생 시작 시 미디어를 열어 전체 길이를 읽습니다. 위치 이동 바는 클릭·드래그·키보드로 이동하며 일시정지 중 위치를 옮겨도 일시정지를 유지합니다. 1시간 이상은 `시:분:초`로 표시합니다. 길이를 알 수 없으면 전체 길이는 `--:--`로 표시하고 위치 이동을 비활성화합니다. 일시정지 중 영상의 위치를 이동하면 해당 프레임을 표시합니다.
 
 PDF 렌더링은 [PDFium의 V8 없는 배포본](https://github.com/bblanchon/pdfium-binaries), 영상 재생은 [WPF MediaElement](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/graphics-multimedia/multimedia-overview)를 사용합니다. 문서 서식은 [Open XML 패키지](https://learn.microsoft.com/en-us/office/open-xml/about-the-open-xml-sdk), [HWPX 구조](https://tech.hancom.com/hwpxformat/), [OpenDocument 스키마](https://docs.oasis-open.org/office/OpenDocument/v1.3/OpenDocument-v1.3-part3-schema.html)에서 직접 읽어 WPF로 렌더링합니다. Office 설치나 셸 미리보기 처리기는 사용하지 않습니다.
 

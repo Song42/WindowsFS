@@ -33,7 +33,7 @@ internal static partial class Program
             Equal(PreviewKind.Audio, FilePreviewReader.KindFor(PreviewRow(path)));
             Check(result.HasAudio && result.HasMedia && !result.HasVideo && result.AudioPath == path && result.MediaPath == path,
                 "MP3 did not prepare local audio controls: " + result.Text);
-            Check(result.Text.Contains("30초"), "Audio preview duration was not described.");
+            Check(!result.Text.Contains("30초"), "Audio preview still describes a playback time limit.");
         }
         var vm = new MainViewModel(new StubScanner((_, _, _) => Task.FromResult(FixtureResult())), previewReader: reader);
         vm.SelectedRow = PreviewRow(raw);

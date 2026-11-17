@@ -16,10 +16,17 @@
           </Style>
         </Border.Style>
       </Border>
+      <Slider x:Name="PlaybackPosition" Minimum="0" Maximum="1" Value="0" IsEnabled="False"
+              IsMoveToPointEnabled="True" SmallChange="1" LargeChange="10" Height="22" Margin="0,8,0,0"
+              Foreground="{StaticResource Accent}" ValueChanged="SeekValueChanged" AutomationProperties.Name="재생 위치" />
+      <Grid Margin="0,2,0,0">
+        <TextBlock x:Name="CurrentPlaybackTime" Text="00:00" FontSize="11" Foreground="{StaticResource Muted}" AutomationProperties.Name="현재 재생 시간" />
+        <TextBlock x:Name="TotalPlaybackTime" Text="--:--" HorizontalAlignment="Right" FontSize="11" Foreground="{StaticResource Muted}" AutomationProperties.Name="전체 길이" />
+      </Grid>
       <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
         <Button x:Name="PlayButton" Content="재생" Click="PlayClick" Padding="10,6" />
-        <Button Content="일시정지" Click="PauseClick" Padding="10,6" Margin="6,0,0,0" />
-        <Button Content="처음" Click="RestartClick" Padding="10,6" Margin="6,0,0,0" />
+        <Button x:Name="PauseButton" Content="일시정지" Click="PauseClick" Padding="10,6" Margin="6,0,0,0" />
+        <Button x:Name="RestartButton" Content="처음" Click="RestartClick" Padding="10,6" Margin="6,0,0,0" />
       </StackPanel>
       <TextBlock x:Name="MediaStatus" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8" />
     </StackPanel>

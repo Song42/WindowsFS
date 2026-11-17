@@ -29,7 +29,6 @@ public sealed class FilePreviewReader : IFilePreviewReader
 {
     public const long MaximumFileBytes = 64 * 1024 * 1024;
     public const long MaximumVideoBytes = 2L * 1024 * 1024 * 1024;
-    public static readonly TimeSpan MaximumPlaybackDuration = TimeSpan.FromSeconds(30);
     private readonly SemaphoreSlim _gate = new(1);
 
     public static PreviewKind KindFor(ResultRow row)
@@ -50,8 +49,8 @@ public sealed class FilePreviewReader : IFilePreviewReader
     public static string Description(ResultRow row) => KindFor(row) switch
     {
         PreviewKind.Image => "이미지 · 최대 64 MB · GIF/TIFF 첫 프레임",
-        PreviewKind.Video => "영상 · 처음 30초 · 최대 2 GB · Windows 지원 코덱",
-        PreviewKind.Audio => "MP3 오디오 · 처음 30초 · 최대 64 MB",
+        PreviewKind.Video => "영상 · 최대 2 GB · Windows 지원 코덱",
+        PreviewKind.Audio => "MP3 오디오 · 최대 64 MB",
         PreviewKind.Pdf => "PDF · 페이지 미리보기 · 최대 64 MB",
         PreviewKind.Document => "문서 페이지 · 서식·표·이미지 · 최대 64 MB · 복잡한 배치 일부 제한",
         PreviewKind.Text => "텍스트 · 최대 64 KB · UTF-8/BOM",
