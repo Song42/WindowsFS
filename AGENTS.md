@@ -7,7 +7,7 @@ The user requires WindowsFS to remain a read-only analyzer of user and system fi
 - Do not add creation, deletion, recycling, copying, moving, renaming, editing, permission changes, or other mutations of analyzed files and directories.
 - Do not expose these operations through buttons, keyboard shortcuts, context menus, drag-and-drop, shell dialogs, external commands, plugins, or background jobs.
 - Use the app's read-only folder picker. Native Windows file/folder dialogs expose shell operations such as creating a folder and must not be used for target selection.
-- Explicit preview actions may read a bounded portion of supported file contents using read-only streams; never execute content or shell preview handlers, persist preview content, or hydrate offline files.
+- Selecting a supported file automatically previews a bounded portion of its contents using read-only streams. Page navigation may read another page; video playback remains explicit. Never execute content or shell preview handlers, persist preview content, or hydrate offline files.
 - Scanning and folder browsing read filesystem metadata only. Never open analyzed file contents for writing.
 - Runtime filesystem writes are limited to the app-owned analysis cache: `%LOCALAPPDATA%\WindowsFS\Cache\latest.scan.json.gz`, its containing directory, and uniquely named temporary files used for atomic cache replacement.
 - Deleting a saved analysis removes only the configured cache file and in-memory results. Never derive a write/delete target from a scan result, selected row, selected scan root, search text, or snapshot contents. Never recursively delete a cache directory.

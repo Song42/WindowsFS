@@ -274,18 +274,17 @@ internal static partial class Program
         var first = PreviewRow($@"{FixturePath}\first.pdf");
         var second = PreviewRow($@"{FixturePath}\second.pdf");
         vm.SelectedRow = first;
-        Equal(0, reader.Calls.Count);
-        vm.PreviewCommand.Execute(null);
+        Equal(1, reader.Calls.Count);
         var loading = vm.WaitForPreviewAsync();
+        reader.Read = (_, page, _) => Task.FromResult(new FilePreview($"page {page}", PageIndex: page, PageCount: 2));
         vm.SelectedRow = second;
         await loading;
+        await vm.WaitForPreviewAsync();
+        Equal(2, reader.Calls.Count);
         Check(reader.Calls[0].Token.IsCancellationRequested, "Selecting another file did not cancel its old preview.");
         pending.SetResult(new FilePreview("stale", PageCount: 3));
         DrainDispatcher();
-        Check(!vm.Preview.Text.Contains("stale") && !vm.HasPreviewPages, "A late preview replaced the current selection.");
-        reader.Read = (_, page, _) => Task.FromResult(new FilePreview($"page {page}", PageIndex: page, PageCount: 2));
-        vm.PreviewCommand.Execute(null);
-        await vm.WaitForPreviewAsync();
+        Check(vm.Preview.Text == "page 0" && vm.Preview.PageCount == 2, "A late preview replaced the automatically loaded current selection.");
         Equal("1 / 2", vm.PreviewPageLabel);
         Check(!vm.PreviousPreviewPageCommand.CanExecute(null) && vm.NextPreviewPageCommand.CanExecute(null), "First-page navigation bounds were wrong.");
         vm.NextPreviewPageCommand.Execute(null);
@@ -298,9 +297,24 @@ internal static partial class Program
             Render((FrameworkElement)window.Content);
             var preview = (FilePreviewControl)window.FindName("ItemPreview");
             Check(ReferenceEquals(vm.Preview, preview.Preview), "The actual detail panel did not bind its preview.");
+            var navigation = (StackPanel)window.FindName("PreviewPageNavigation");
+            Equal(HorizontalAlignment.Center, navigation.HorizontalAlignment);
+            Check(!Descendants<Button>((DependencyObject)window.Content).Any(button => Equals(button.Content, "미리보기")), "The removed preview button is still present.");
             Check(!window.IsVisible, "Preview tests must not show a window.");
         }
         finally { window.Close(); }
+        var calls = reader.Calls.Count;
+        vm.SelectedRow = first with { IsDirectory = true };
+        await vm.WaitForPreviewAsync();
+        Equal(calls, reader.Calls.Count);
+        Check(!vm.HasPreviewPages && !vm.Preview.HasImage, "Selecting a folder retained the previous preview.");
+        vm.SelectedRow = PreviewRow($@"{FixturePath}\program.exe");
+        await vm.WaitForPreviewAsync();
+        Equal(calls, reader.Calls.Count);
+        reader.Read = (_, _, _) => Task.FromResult(new FilePreview("single page", PageCount: 1));
+        vm.SelectedRow = first;
+        await vm.WaitForPreviewAsync();
+        Check(!vm.HasPreviewPages && !vm.NextPreviewPageCommand.CanExecute(null), "A single-page preview exposed page navigation.");
     }
 
     private sealed class StubPreviewReader(Func<ResultRow, int, CancellationToken, Task<FilePreview>> read) : IFilePreviewReader

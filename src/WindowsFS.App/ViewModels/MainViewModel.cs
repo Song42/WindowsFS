@@ -122,7 +122,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool CanShowDetails => HasDetails || CanShowSystemInfo;
     private bool _previewBusy;
     public bool CanPreview => HasDetails && ItemDetailsReader.SupportsPreview(DetailRow!);
-    public ICommand PreviewCommand { get; }
     public ICommand PreviousPreviewPageCommand { get; }
     public ICommand NextPreviewPageCommand { get; }
 
@@ -138,7 +137,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _detailsReader = detailsReader;
         _fileBrowser = fileBrowser;
         _previewReader = previewReader ?? new FilePreviewReader();
-        PreviewCommand = new RelayCommand(_ => _previewTask = LoadPreviewAsync(0), _ => CanPreview && !_previewBusy);
         PreviousPreviewPageCommand = new RelayCommand(_ => _previewTask = LoadPreviewAsync(Preview.PageIndex - 1),
             _ => !_previewBusy && Preview.PageIndex > 0);
         NextPreviewPageCommand = new RelayCommand(_ => _previewTask = LoadPreviewAsync(Preview.PageIndex + 1),
@@ -641,6 +639,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (row.IsDirectory) fields.Add(new("포함 파일 · 분석 당시", row.CountText));
         }
         _details = fields.ToArray(); Changed(nameof(Details));
+        _previewTask = CanPreview ? LoadPreviewAsync(0) : Task.CompletedTask;
         if (row is null || _detailsReader is null) return;
         try
         {

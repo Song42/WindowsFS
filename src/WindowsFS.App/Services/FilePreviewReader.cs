@@ -21,7 +21,7 @@ public interface IFilePreviewReader
     Task<FilePreview> ReadAsync(ResultRow row, int pageIndex, CancellationToken token);
 }
 
-/// <summary>Explicit, bounded previews. No shell handlers, Office automation, extraction, or disk cache.</summary>
+/// <summary>Bounded previews for selected files. No shell handlers, Office automation, extraction, or disk cache.</summary>
 public sealed class FilePreviewReader : IFilePreviewReader
 {
     public const long MaximumFileBytes = 64 * 1024 * 1024;
