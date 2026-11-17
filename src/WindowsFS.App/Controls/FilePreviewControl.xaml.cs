@@ -61,9 +61,13 @@ public partial class FilePreviewControl : UserControl
     {
         _timer.Stop();
         _opening = false;
-        if (VideoPlayer is null) return;
-        VideoPlayer.Close();
-        VideoPlayer.Source = null;
-        VideoStatus.Text = "";
+        // Closing an unopened MediaElement can initialize its native player. Keep selection-only
+        // and headless sessions free of media infrastructure until an explicit Play action.
+        if (VideoPlayer?.Source is not null)
+        {
+            VideoPlayer.Close();
+            VideoPlayer.Source = null;
+        }
+        if (VideoStatus is not null) VideoStatus.Text = "";
     }
 }
