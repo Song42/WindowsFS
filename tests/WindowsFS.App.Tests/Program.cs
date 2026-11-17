@@ -465,6 +465,12 @@ internal static class Program
             Equal(600L, parent.Bytes);
             Equal(20d, dot.Share);
             Equal(60d, parent.Share);
+            grid.SelectedItem = parent;
+            Render(content);
+            Equal("..", ((ResultRow)grid.Items[1]).Name);
+            Equal("Projects", vm.Details.Single(field => field.Label == "이름").Value);
+            Equal($@"{FixturePath}\Projects", vm.Details.Single(field => field.Label == "전체 경로").Value);
+            Equal($@"{FixturePath}\Projects\Archive", vm.Breadcrumb);
             vm.DismissSystemInfoCommand.Execute(null);
             grid.SelectedItem = dot;
             Render(content);

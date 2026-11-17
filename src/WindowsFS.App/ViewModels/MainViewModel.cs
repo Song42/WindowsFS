@@ -91,8 +91,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private SpaceMapLayout _mapLayout = SpaceMapLayout.Blocks;
     private ResultRow? _selectedRow;
     private ResultRow? _currentFolderRow;
-    private ResultRow? DetailRow => _view == "types" ? null : _selectedRow?.Navigation == FolderNavigationKind.Current
-        ? _currentFolderRow : _selectedRow ?? _currentFolderRow;
+    private ResultRow? _parentFolderRow;
+    private ResultRow? DetailRow => _view == "types" ? null : _selectedRow?.Navigation switch
+    {
+        FolderNavigationKind.Current => _currentFolderRow,
+        FolderNavigationKind.Parent => _parentFolderRow,
+        _ => _selectedRow ?? _currentFolderRow
+    };
     private SystemItemInfo? _systemInfo;
     private bool _systemInfoDismissed;
     private readonly ItemDetailsReader? _detailsReader;
@@ -677,6 +682,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void RefreshDisplayRows()
     {
+        _parentFolderRow = null;
         if (_view != "folders" || _result is null) DisplayRows = Rows;
         else
         {
@@ -685,6 +691,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var parent = _folderPath is not null && _parents.TryGetValue(_folderPath, out var parentPath) &&
                 _folders.TryGetValue(parentPath, out var node)
                 ? new ResultRow(node.Name, node.Path, node.TotalBytes, node.FileCount, true, "폴더", Share(node.TotalBytes)) : aggregate;
+            _parentFolderRow = parent;
             DisplayRows = [current with { Name = ".", Navigation = FolderNavigationKind.Current },
                 parent with { Name = "..", Navigation = FolderNavigationKind.Parent }, .. Rows];
         }
