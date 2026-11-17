@@ -12,6 +12,11 @@ The user requires WindowsFS to remain a read-only analyzer of user and system fi
 - Deleting a saved analysis removes only the configured cache file and in-memory results. Never derive a write/delete target from a scan result, selected row, selected scan root, search text, or snapshot contents. Never recursively delete a cache directory.
 - Explorer integration may only reveal a selected path. Clipboard integration may only copy the path text. Official help links may only open documentation; do not execute cleanup commands.
 
+## Navigation
+
+- Keep the main window free of a sidebar. Largest files, folder browsing, and file-type views are reached from dashboard cards, with a visible return to the dashboard.
+- Main-window controls for all local drives, individual disks, and disk-capacity widgets are deferred until the user decides their UI. Do not add replacement drive widgets by inference. Internal scan targets and read-only folder selection remain available.
+
 ## Verification and privacy
 
 - Review every new filesystem or shell call against the read-only boundary and the narrow cache exception.

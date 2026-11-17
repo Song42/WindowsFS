@@ -21,11 +21,6 @@ public partial class MainWindow : Window
         Width = Math.Min(Width, workArea.Width);
         Height = Math.Min(Height, workArea.Height);
         DataContext = _viewModel;
-        _viewModel.PropertyChanged += (_, args) =>
-        {
-            if (args.PropertyName == nameof(MainViewModel.IsMapVisible))
-                MapColumn.Width = _viewModel.IsMapVisible ? new GridLength(0.85, GridUnitType.Star) : new GridLength(0);
-        };
     }
 
     private async void WindowLoaded(object sender, RoutedEventArgs e)

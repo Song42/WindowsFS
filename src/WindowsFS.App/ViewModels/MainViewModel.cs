@@ -154,6 +154,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool ShowMap => _view is "overview" or "folders";
     public bool ShowFolderNavigation => _view == "folders";
     public bool IsOverview => _view == "overview";
+    public bool IsDetailView => !IsOverview;
     public bool IsFiles => _view == "files";
     public bool IsFolders => _view == "folders";
     public bool IsTypes => _view == "types";
@@ -170,11 +171,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string TotalSize => DisplayFormat.Bytes(_bytes);
     public string FileCount => _files.ToString("N0");
     public string FolderCount => $"{_folderCount:N0}개 폴더";
+    public string LargestFileCount => $"{_result?.LargestFiles.Count ?? 0:N0}개 파일";
+    public string FileTypeCount => $"{_result?.FileTypes.Count ?? 0:N0}개 형식";
     public string Elapsed => _elapsed.TotalHours >= 1 ? _elapsed.ToString(@"h\:mm\:ss") : _elapsed.ToString(@"mm\:ss");
     public string Speed => _elapsed.TotalSeconds > 0 ? $"{_files / _elapsed.TotalSeconds:N0} 파일/초" : "분석 대기";
     public string Skipped => _skipped.ToString("N0");
     public string ScanState => IsDeleting ? "삭제 중" : IsRestoring ? "불러오는 중" : IsSaving ? "저장 중" : IsBusy ? "분석 중" : _result is null ? "준비됨" : _result.IsCancelled ? "부분 결과" : _isRestored ? "저장된 분석" : "분석 완료";
-    public string PageTitle => _view switch { "files" => "가장 큰 파일", "folders" => "폴더 탐색", "types" => "파일 형식", _ => "공간 분석" };
+    public string PageTitle => _view switch { "files" => "가장 큰 파일", "folders" => "폴더 탐색", "types" => "파일 형식", _ => "대시보드" };
     public string PageDescription => _view switch { "files" => "최대 1,000개 · 용량순", "folders" => "폴더별 용량 · 두 번 클릭: 하위 폴더 열기", "types" => "확장자별 용량 합계", _ => "파일·폴더별 용량 분포" };
     public string TableTitle => _view switch { "folders" => "하위 폴더", "types" => "형식별 사용량", _ => "가장 큰 파일" };
     public string TableHint => _view == "folders" ? "선택: 시스템 항목 설명 · 두 번 클릭: 폴더 열기" : _view == "types" ? "확장자 없는 파일 포함" : "상위 1,000개 · 선택: 시스템 항목 설명";
@@ -476,7 +479,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void RefreshView()
     {
-        foreach (var name in new[] { nameof(PageTitle), nameof(PageDescription), nameof(TableTitle), nameof(TableHint), nameof(ShowMap), nameof(ShowFolderNavigation), nameof(Breadcrumb), nameof(MapTitle), nameof(IsOverview), nameof(IsFiles), nameof(IsFolders), nameof(IsTypes) }) Changed(name);
+        foreach (var name in new[] { nameof(PageTitle), nameof(PageDescription), nameof(TableTitle), nameof(TableHint), nameof(ShowMap), nameof(ShowFolderNavigation), nameof(Breadcrumb), nameof(MapTitle), nameof(IsOverview), nameof(IsDetailView), nameof(IsFiles), nameof(IsFolders), nameof(IsTypes) }) Changed(name);
         RefreshRows(); RefreshMap();
         Changed(nameof(IsMapVisible));
         CommandManager.InvalidateRequerySuggested();
@@ -572,7 +575,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void NotifyStatistics()
     {
-        foreach (var name in new[] { nameof(TotalSize), nameof(FileCount), nameof(FolderCount), nameof(Elapsed), nameof(Speed), nameof(Skipped), nameof(ScanState) }) Changed(name);
+        foreach (var name in new[] { nameof(TotalSize), nameof(FileCount), nameof(FolderCount), nameof(LargestFileCount), nameof(FileTypeCount), nameof(Elapsed), nameof(Speed), nameof(Skipped), nameof(ScanState) }) Changed(name);
     }
 
     private void Changed([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

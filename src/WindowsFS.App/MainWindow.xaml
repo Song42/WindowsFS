@@ -12,13 +12,9 @@
         <RowDefinition Height="42" />
         <RowDefinition Height="*" />
       </Grid.RowDefinitions>
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="216" />
-        <ColumnDefinition Width="*" />
-      </Grid.ColumnDefinitions>
-      <Border Grid.ColumnSpan="2" Background="#101218">
+      <Border Background="#101218">
         <Grid>
-          <StackPanel Orientation="Horizontal" Margin="22,0" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Margin="30,0" VerticalAlignment="Center">
             <TextBlock Text="◈" Foreground="{StaticResource Accent}" FontSize="20" Margin="0,0,10,0" />
             <TextBlock Text="WindowsFS" FontWeight="SemiBold" VerticalAlignment="Center" />
           </StackPanel>
@@ -29,83 +25,36 @@
           </StackPanel>
         </Grid>
       </Border>
-      <Border Grid.Row="1" Background="#15171E" BorderBrush="#262A35" BorderThickness="0,0,1,0">
-        <Grid Margin="14,26,14,20">
-          <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-          </Grid.RowDefinitions>
-          <StackPanel>
-            <Button Command="{Binding NavigateCommand}" CommandParameter="overview" Tag="{Binding IsOverview}" Style="{StaticResource Nav}">
-              <StackPanel Orientation="Horizontal">
-                <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Margin="0,0,12,0" />
-                <TextBlock Text="공간 분석" />
-              </StackPanel>
-            </Button>
-            <Button Command="{Binding NavigateCommand}" CommandParameter="files" Tag="{Binding IsFiles}" Style="{StaticResource Nav}">
-              <StackPanel Orientation="Horizontal">
-                <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Margin="0,0,12,0" />
-                <TextBlock Text="가장 큰 파일" />
-              </StackPanel>
-            </Button>
-            <Button Command="{Binding NavigateCommand}" CommandParameter="folders" Tag="{Binding IsFolders}" Style="{StaticResource Nav}">
-              <StackPanel Orientation="Horizontal">
-                <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Margin="0,0,12,0" />
-                <TextBlock Text="폴더 탐색" />
-              </StackPanel>
-            </Button>
-            <Button Command="{Binding NavigateCommand}" CommandParameter="types" Tag="{Binding IsTypes}" Style="{StaticResource Nav}">
-              <StackPanel Orientation="Horizontal">
-                <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Margin="0,0,12,0" />
-                <TextBlock Text="파일 형식" />
-              </StackPanel>
-            </Button>
-          </StackPanel>
-          <StackPanel Grid.Row="1" Margin="0,34,0,0">
-            <TextBlock Text="드라이브" FontSize="10" Foreground="#6E7789" Margin="16,0,0,9" />
-            <Button Content="모든 로컬 드라이브" Command="{Binding SelectDriveCommand}" Tag="{Binding IsAllDrivesSelected}" Style="{StaticResource Nav}" Foreground="{StaticResource Accent}" />
-          </StackPanel>
-          <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding Drives}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Button Command="{Binding DataContext.SelectDriveCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Path}" Tag="{Binding IsSelected}" Style="{StaticResource Nav}" Padding="12,13" Margin="0,4">
-                    <StackPanel Width="154">
-                      <TextBlock Text="{Binding Label}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Label}" />
-                      <ProgressBar Value="{Binding UsedPercent, Mode=OneWay}" Height="3" Background="#303442" Foreground="#9C8DCD" BorderThickness="0" Margin="0,10,0,9" />
-                      <TextBlock Text="{Binding Capacity}" FontSize="10" Foreground="{StaticResource Muted}" TextWrapping="Wrap" />
-                    </StackPanel>
-                  </Button>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </ScrollViewer>
-          <Button x:Name="DeleteSavedAnalysisButton" Grid.Row="3" Content="저장된 분석 삭제" Command="{Binding DeleteSavedAnalysisCommand}" Margin="0,16,0,0" Padding="10,9" FontSize="12" Foreground="{StaticResource Muted}" ToolTip="저장된 분석·현재 결과 삭제 · 실제 파일·폴더 유지" />
-        </Grid>
-      </Border>
-      <Grid Grid.Row="1" Grid.Column="1" Margin="30,26,30,18">
+      <Grid x:Name="MainContent" Grid.Row="1" Margin="30,22,30,18">
         <Grid.RowDefinitions>
+          <RowDefinition Height="58" />
           <RowDefinition Height="62" />
-          <RowDefinition Height="66" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid>
-          <StackPanel>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <Button x:Name="DashboardBackButton" Content="← 대시보드" Command="{Binding NavigateCommand}" CommandParameter="overview" Visibility="{Binding IsDetailView, Converter={StaticResource Visible}}" VerticalAlignment="Top" Margin="0,4,18,0" Padding="11,8" Background="Transparent" BorderThickness="0" Foreground="{StaticResource Muted}" AutomationProperties.Name="대시보드로 돌아가기" />
+          <StackPanel Grid.Column="1">
             <TextBlock Text="{Binding PageTitle}" FontSize="28" FontWeight="SemiBold" />
-            <TextBlock Text="{Binding PageDescription}" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,5,0,0" />
+            <TextBlock Text="{Binding PageDescription}" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,4,0,0" />
           </StackPanel>
-          <Border HorizontalAlignment="Right" VerticalAlignment="Top" Background="#252333" BorderBrush="#413952" BorderThickness="1" CornerRadius="14" Padding="12,6">
-            <StackPanel Orientation="Horizontal">
-              <Ellipse Width="6" Height="6" Fill="#B4A2EA" Margin="0,0,8,0" />
-              <TextBlock Text="{Binding ScanState}" Foreground="{StaticResource Accent}" FontSize="11" />
-            </StackPanel>
-          </Border>
+          <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top" Margin="16,3,0,0">
+            <Button x:Name="DeleteSavedAnalysisButton" Content="저장된 분석 삭제" Command="{Binding DeleteSavedAnalysisCommand}" Margin="0,0,12,0" Padding="12,7" FontSize="11" Background="Transparent" Foreground="{StaticResource Muted}" ToolTip="저장된 분석·현재 결과 삭제 · 실제 파일·폴더 유지" />
+            <Border Background="#252333" BorderBrush="#413952" BorderThickness="1" CornerRadius="14" Padding="12,6">
+              <StackPanel Orientation="Horizontal">
+                <Ellipse Width="6" Height="6" Fill="#B4A2EA" Margin="0,0,8,0" />
+                <TextBlock Text="{Binding ScanState}" Foreground="{StaticResource Accent}" FontSize="11" VerticalAlignment="Center" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
         </Grid>
-        <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16,6" Margin="0,0,0,12">
+        <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16,5" Margin="0,0,0,10">
           <Grid>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*" />
@@ -114,7 +63,7 @@
             </Grid.ColumnDefinitions>
             <StackPanel VerticalAlignment="Center" Margin="0,0,15,0">
               <TextBlock Text="분석 대상" FontSize="10" Foreground="{StaticResource Muted}" />
-              <TextBlock Text="{Binding TargetLabel}" FontWeight="SemiBold" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding TargetLabel}" />
+              <TextBlock Text="{Binding TargetLabel}" FontWeight="SemiBold" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding TargetLabel}" />
             </StackPanel>
             <Button Grid.Column="1" Content="폴더 선택" Command="{Binding ChooseFolderCommand}" Margin="0,0,10,0" VerticalAlignment="Center" />
             <Grid Grid.Column="2">
@@ -123,37 +72,72 @@
             </Grid>
           </Grid>
         </Border>
-        <UniformGrid Grid.Row="2" Columns="4" Height="86" Margin="0,0,0,12" Visibility="{Binding IsOverview, Converter={StaticResource Visible}}">
-          <Border Style="{StaticResource Card}" Margin="0,0,12,0" Padding="16,10">
-            <StackPanel>
-              <TextBlock Text="분석된 파일 크기" Foreground="{StaticResource Muted}" FontSize="11" />
-              <TextBlock Text="{Binding TotalSize}" FontSize="24" FontWeight="SemiBold" Foreground="{StaticResource Accent}" Margin="0,5,0,0" />
-              <TextBlock Text="논리적 크기 · 1 KB = 1,024 B" FontSize="9" Foreground="#768094" Margin="0,2,0,0" />
+        <StackPanel x:Name="DashboardNavigation" Grid.Row="2" Visibility="{Binding IsOverview, Converter={StaticResource Visible}}">
+          <UniformGrid x:Name="DashboardCards" Columns="3" Height="74" Margin="0,0,0,8">
+            <Button x:Name="DashboardFilesButton" Command="{Binding NavigateCommand}" CommandParameter="files" Style="{StaticResource DashboardLink}" Margin="0,0,12,0" AutomationProperties.Name="가장 큰 파일">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20" Foreground="{StaticResource Accent}" Margin="0,0,14,0" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="가장 큰 파일" FontSize="15" FontWeight="SemiBold" />
+                  <TextBlock Text="최대 1,000개 · 용량순" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" HorizontalAlignment="Right" Margin="8,0,0,0">
+                  <TextBlock Text="→" Foreground="{StaticResource Accent}" FontSize="15" HorizontalAlignment="Right" />
+                  <TextBlock Text="{Binding LargestFileCount}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
+                </StackPanel>
+              </Grid>
+            </Button>
+            <Button x:Name="DashboardFoldersButton" Command="{Binding NavigateCommand}" CommandParameter="folders" Style="{StaticResource DashboardLink}" Margin="0,0,12,0" AutomationProperties.Name="폴더 탐색">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20" Foreground="#82B1E7" Margin="0,0,14,0" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="폴더 탐색" FontSize="15" FontWeight="SemiBold" />
+                  <TextBlock Text="폴더별 누적 용량" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" HorizontalAlignment="Right" Margin="8,0,0,0">
+                  <TextBlock Text="→" Foreground="#82B1E7" FontSize="15" HorizontalAlignment="Right" />
+                  <TextBlock Text="{Binding FolderCount}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
+                </StackPanel>
+              </Grid>
+            </Button>
+            <Button x:Name="DashboardTypesButton" Command="{Binding NavigateCommand}" CommandParameter="types" Style="{StaticResource DashboardLink}" AutomationProperties.Name="파일 형식">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20" Foreground="#70BEB1" Margin="0,0,14,0" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="파일 형식" FontSize="15" FontWeight="SemiBold" />
+                  <TextBlock Text="확장자별 용량 합계" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" HorizontalAlignment="Right" Margin="8,0,0,0">
+                  <TextBlock Text="→" Foreground="#70BEB1" FontSize="15" HorizontalAlignment="Right" />
+                  <TextBlock Text="{Binding FileTypeCount}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
+                </StackPanel>
+              </Grid>
+            </Button>
+          </UniformGrid>
+          <Grid x:Name="DashboardStatistics" Height="26" Margin="2,0,2,8">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="1.2*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" ToolTip="논리적 크기 · 1 KB = 1,024 B">
+              <TextBlock Text="분석된 파일 크기" Foreground="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding TotalSize}" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource Accent}" Margin="12,0,0,0" />
             </StackPanel>
-          </Border>
-          <Border Style="{StaticResource Card}" Margin="0,0,12,0" Padding="16,10">
-            <StackPanel>
-              <TextBlock Text="확인한 파일" Foreground="{StaticResource Muted}" FontSize="11" />
-              <TextBlock Text="{Binding FileCount}" FontSize="24" FontWeight="SemiBold" Margin="0,5,0,0" />
-              <TextBlock Text="{Binding FolderCount}" FontSize="10" Foreground="#768094" Margin="0,2,0,0" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+              <TextBlock Text="확인한 파일" Foreground="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding FileCount}" FontSize="13" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
             </StackPanel>
-          </Border>
-          <Border Style="{StaticResource Card}" Margin="0,0,12,0" Padding="16,10">
-            <StackPanel>
-              <TextBlock Text="분석 시간" Foreground="{StaticResource Muted}" FontSize="11" />
-              <TextBlock Text="{Binding Elapsed}" FontSize="24" FontWeight="SemiBold" Margin="0,5,0,0" />
-              <TextBlock Text="{Binding Speed}" FontSize="10" Foreground="#768094" Margin="0,2,0,0" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" ToolTip="{Binding Speed}">
+              <TextBlock Text="분석 시간" Foreground="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding Elapsed}" FontSize="13" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
             </StackPanel>
-          </Border>
-          <Border Style="{StaticResource Card}" Padding="16,10" ToolTip="권한 제한·링크·오프라인 항목 제외. 제외된 폴더의 하위 파일 수 미집계.">
-            <StackPanel>
-              <TextBlock Text="건너뛴 항목" Foreground="{StaticResource Muted}" FontSize="11" />
-              <TextBlock Text="{Binding Skipped}" FontSize="24" FontWeight="SemiBold" Margin="0,5,0,0" />
-              <TextBlock Text="권한 제한 / 링크 / 오프라인" FontSize="10" Foreground="#768094" Margin="0,2,0,0" />
+            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" ToolTip="권한 제한·링크·오프라인 항목 제외. 제외된 폴더의 하위 파일 수 미집계.">
+              <TextBlock Text="건너뛴 항목" Foreground="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding Skipped}" FontSize="13" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
             </StackPanel>
-          </Border>
-        </UniformGrid>
-        <Grid Grid.Row="3">
+          </Grid>
+        </StackPanel>
+        <Grid x:Name="AnalysisResults" Grid.Row="3">
           <Grid Visibility="{Binding HasResult, Converter={StaticResource Visible}}">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
@@ -170,7 +154,18 @@
             </StackPanel>
             <Grid Grid.Row="1">
               <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="MapColumn" Width="0.85*" />
+                <ColumnDefinition x:Name="MapColumn">
+                  <ColumnDefinition.Style>
+                    <Style TargetType="ColumnDefinition">
+                      <Setter Property="Width" Value="0.85*" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsMapVisible}" Value="False">
+                          <Setter Property="Width" Value="0" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </ColumnDefinition.Style>
+                </ColumnDefinition>
                 <ColumnDefinition Width="1.4*" />
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>

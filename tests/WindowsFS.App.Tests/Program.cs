@@ -37,7 +37,8 @@ internal static class Program
         };
         var tests = new (string Name, Func<Task> Run)[]
         {
-            ("Actual XAML realizes read-only drive and result progress bindings", XamlSmoke),
+            ("Actual XAML realizes a full-width dashboard and read-only result bindings", XamlSmoke),
+            ("Dashboard cards and return navigation retain saved analysis without scanning", DashboardNavigation),
             ("Folder browsing reads metadata without changing the source tree", ReadOnlyFolderBrowsing),
             ("Folder picker navigation and confirmation select the requested directory", FolderPickerNavigation),
             ("Invalid picker paths never fall back to the previously visited folder", FolderPickerInvalidPaths),
@@ -106,16 +107,13 @@ internal static class Program
                 "The application window did not inherit the light foreground style.");
             var content = (FrameworkElement)window.Content;
             Render(content);
-            var overviewButton = Descendants<Button>(content)
-                .Single(button => Equals(button.CommandParameter, "overview"));
-            var filesButton = Descendants<Button>(content)
-                .Single(button => Equals(button.CommandParameter, "files"));
-            var selectedColor = Color.FromRgb(0x30, 0x2A, 0x41);
-            AssertColor(overviewButton.Background, selectedColor,
-                "The selected navigation item did not receive its highlight.");
-            var driveBars = Descendants<ProgressBar>(content).Where(bar => bar.DataContext is DriveItem).ToArray();
-            Check(driveBars.Length == 1, "The actual drive template was not realized.");
-            AssertOneWayValue(driveBars[0], 62.5);
+            var main = (FrameworkElement)window.FindName("MainContent");
+            Check(main.ActualWidth >= 1_440 * 0.9 && main.TranslatePoint(new Point(), content).X < 50,
+                "The main content retained sidebar-sized spacing instead of using the window width.");
+            Check(!Descendants<Button>(content).Any(button => ReferenceEquals(button.Command, vm.SelectDriveCommand)) &&
+                !Descendants<ItemsControl>(content).Any(control => ReferenceEquals(control.ItemsSource, vm.Drives)) &&
+                !Descendants<ProgressBar>(content).Any(bar => bar.DataContext is DriveItem),
+                "The deferred drive picker or capacity cards remain in the main window.");
 
             await vm.ScanAsync();
             Render(content);
@@ -136,15 +134,98 @@ internal static class Program
                 vm.NavigateCommand.Execute(view);
                 Render(content);
                 Equal(vm.Rows.Count, grid.Items.Count);
-                if (view == "files")
-                {
-                    AssertColor(filesButton.Background, selectedColor,
-                        "The newly selected navigation item did not receive its highlight.");
-                    Check(overviewButton.Background is SolidColorBrush { Color.A: 0 },
-                        "The previous navigation item remained highlighted.");
-                }
             }
             Check(!window.IsVisible, "The test must not display a native window.");
+        }
+        finally { window.Close(); }
+    }
+
+    private static async Task DashboardNavigation()
+    {
+        var saved = new SavedScan(FixtureResult(), FixturePath, DateTimeOffset.UtcNow.AddDays(-1));
+        var store = new StubStore(saved);
+        var scanner = new StubScanner((_, _, _) => throw new InvalidOperationException("Dashboard navigation must not scan."));
+        var vm = CreateViewModel(scanner, store);
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            var content = (FrameworkElement)window.Content;
+            Render(content);
+            var navigation = (FrameworkElement)window.FindName("DashboardNavigation");
+            var back = (Button)window.FindName("DashboardBackButton");
+            var delete = (Button)window.FindName("DeleteSavedAnalysisButton");
+            var cards = new[]
+            {
+                (Button: (Button)window.FindName("DashboardFilesButton"), View: "files"),
+                (Button: (Button)window.FindName("DashboardFoldersButton"), View: "folders"),
+                (Button: (Button)window.FindName("DashboardTypesButton"), View: "types")
+            };
+            Equal("대시보드", vm.PageTitle);
+            Check(vm.IsOverview && !vm.IsDetailView && navigation.Visibility == Visibility.Visible &&
+                back.Visibility == Visibility.Collapsed, "The initial dashboard or its return control is inconsistent.");
+            foreach (var (button, view) in cards)
+            {
+                Check(ReferenceEquals(button.Command, vm.NavigateCommand) && Equals(button.CommandParameter, view),
+                    "A dashboard card is not bound to its analysis page.");
+                Check(button.IsEnabled, "An empty analysis stranded dashboard navigation.");
+                button.Command!.Execute(button.CommandParameter);
+                Render(content);
+                Check(vm.IsDetailView && navigation.Visibility == Visibility.Collapsed && back.Visibility == Visibility.Visible,
+                    "A detail page did not replace the dashboard navigation with its return control.");
+                Check(vm.ShowEmpty && vm.Rows.Count == 0, "Opening an empty detail page fabricated results.");
+                Check(delete.Visibility == Visibility.Visible && !delete.IsEnabled,
+                    "The global saved-analysis action disappeared or became enabled without a snapshot.");
+                back.Command!.Execute(back.CommandParameter);
+                Render(content);
+                Check(vm.IsOverview && navigation.Visibility == Visibility.Visible && back.Visibility == Visibility.Collapsed,
+                    "The detail return control did not restore the dashboard.");
+            }
+
+            await vm.RestoreLastScanAsync();
+            vm.SetMapLayoutCommand.Execute("donut");
+            Render(content);
+            var timestamp = vm.SnapshotDescription;
+            var target = vm.TargetLabel;
+            var scope = vm.ResultScope;
+            Equal("4개 파일", vm.LargestFileCount);
+            Equal("2개 형식", vm.FileTypeCount);
+            Check(Descendants<TextBlock>(cards[0].Button).Any(text => text.Text == vm.LargestFileCount) &&
+                Descendants<TextBlock>(cards[2].Button).Any(text => text.Text == vm.FileTypeCount),
+                "Dashboard cards did not update their counts after a saved analysis loaded.");
+            foreach (var (button, view) in cards)
+            {
+                button.Command!.Execute(button.CommandParameter);
+                Render(content);
+                Check(vm.IsDetailView && back.Visibility == Visibility.Visible && delete.IsEnabled,
+                    "A populated detail page lost dashboard return or saved-analysis controls.");
+                if (view == "files") Equal(saved.Result.LargestFiles.Count, vm.Rows.Count);
+                if (view == "types") Equal(saved.Result.FileTypes.Count, vm.Rows.Count);
+                if (view == "folders") Equal(saved.Result.Roots.Count, vm.Rows.Count);
+                vm.Search = "fixture filter";
+                back.Command!.Execute(back.CommandParameter);
+                Render(content);
+                Equal("", vm.Search);
+                Equal(SpaceMapLayout.Donut, vm.MapLayout);
+                Equal(timestamp, vm.SnapshotDescription);
+                Equal(target, vm.TargetLabel);
+                Equal(scope, vm.ResultScope);
+                Check(vm.HasSavedAnalysis && vm.HasResult, "Navigation discarded the saved result.");
+            }
+
+            vm.NavigateMap(vm.MapItems.Single(item => item.IsDirectory));
+            Render(content);
+            Check(vm.IsFolders && back.Visibility == Visibility.Visible,
+                "Folder entry from the dashboard map omitted the dashboard return control.");
+            back.Command!.Execute(back.CommandParameter);
+            Render(content);
+            Check(vm.IsOverview && navigation.Visibility == Visibility.Visible, "Map navigation could not return to the dashboard.");
+            Equal(1_000L, vm.MapItems.Sum(item => item.Size));
+            Equal(SpaceMapLayout.Donut, vm.MapLayout);
+            Equal(0, scanner.ProgressReports.Count);
+            Equal(1, store.LoadCalls);
+            Equal(0, store.SaveCalls);
+            Equal(0, store.DeleteCalls);
+            Check(!window.IsVisible, "Dashboard navigation tests must not display a desktop window.");
         }
         finally { window.Close(); }
     }
@@ -355,11 +436,23 @@ internal static class Program
             {
                 vm.NavigateCommand.Execute(view);
                 vm.SelectedRow = infoVisible ? vm.Rows[0] : null;
-                // This offscreen fixture replaces DataContext after construction, so mirror the
-                // production window's column subscription for the injected view model.
-                ((ColumnDefinition)window.FindName("MapColumn")).Width = vm.IsMapVisible
-                    ? new GridLength(0.85, GridUnitType.Star) : new GridLength(0);
                 RenderSize(content, size);
+                var mapColumn = (ColumnDefinition)window.FindName("MapColumn");
+                Check(vm.IsMapVisible ? mapColumn.ActualWidth > 0 : mapColumn.ActualWidth == 0,
+                    "Map visibility left the wrong amount of layout space in the result view.");
+                var main = (FrameworkElement)window.FindName("MainContent");
+                Check(main.ActualWidth >= size.Width * 0.9 && main.TranslatePoint(new Point(), content).X < 50,
+                    $"The content retained a sidebar gap at {size}.");
+                if (view == "overview")
+                {
+                    foreach (var name in new[] { "DashboardFilesButton", "DashboardFoldersButton", "DashboardTypesButton" })
+                    {
+                        var card = (Button)window.FindName(name);
+                        var position = card.TranslatePoint(new Point(), main);
+                        Check(card.ActualWidth >= 200 && position.X >= 0 && position.X + card.ActualWidth <= main.ActualWidth + 1,
+                            $"A dashboard entry was clipped or too narrow at {size}.");
+                    }
+                }
                 var grid = Descendants<DataGrid>(content).Single();
                 var scroller = Descendants<ScrollViewer>(grid).First();
                 var scrollbar = Descendants<ScrollBar>(scroller).Single(bar => bar.Orientation == Orientation.Vertical);
@@ -1231,6 +1324,9 @@ internal static class Program
             Check(!button.IsEnabled && !vm.HasResult && !vm.HasSavedAnalysis,
                 "The delete button or visible analysis remained active after deletion.");
             Equal(0, Descendants<DataGrid>(content).Single().Items.Count);
+            Check(Descendants<TextBlock>((Button)window.FindName("DashboardFilesButton")).Any(text => text.Text == "0개 파일") &&
+                Descendants<TextBlock>((Button)window.FindName("DashboardTypesButton")).Any(text => text.Text == "0개 형식"),
+                "Dashboard cards retained counts from the deleted analysis.");
             Equal(0, scanner.ProgressReports.Count);
             Check(!window.IsVisible, "The delete-control fixture must not open a desktop window.");
         }

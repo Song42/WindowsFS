@@ -10,6 +10,10 @@ WindowsFS has a permanent read-only boundary for user and system files. Creation
 
 Target selection uses an app-owned read-only folder picker, because native Windows file/folder dialogs expose shell operations such as creating folders. The picker enumerates one directory level in the background and validates existing directories without creating them. It has no filesystem mutation commands, shell context menus, or drag-and-drop operations. Explorer integration only reveals a path, and copying a path copies text to the clipboard. The sole runtime filesystem-write exception is the app-owned analysis cache, its directory, and temporary files needed for atomic replacement. Saved or selected scan paths must never become write/delete targets. Repository-wide development rules are recorded in `AGENTS.md`.
 
+## Dashboard navigation
+
+The main window uses its full width without a sidebar. Three dashboard cards open largest files, folder browsing, and file-type summaries; detail pages expose a dashboard return button. Navigation reuses the current in-memory analysis, preserves its selected map layout, and does not scan or persist data. Dashboard counts use the complete result rather than the filtered detail list. Drive selectors and drive-capacity widgets are deferred until the user decides their interface. Internal drive discovery remains available for scanning and the read-only folder picker. Scan target controls and saved-analysis deletion remain accessible on every page. Result lists retain independent virtualized scrolling at compact window sizes.
+
 ## Space composition views
 
 `SpaceMap` draws either blocks or a donut using the same bounded `MapItem` collection and palette. Switching the layout changes presentation only: it does not scan, rebuild aggregates, or write a snapshot. The chosen layout stays active during folder and page navigation for the current session. Both layouts support folder activation and keyboard selection. Donut hit testing follows the ring sectors rather than their rectangular bounds, so its center and empty surroundings do not open folders. Small and grouped entries retain their represented bytes.
