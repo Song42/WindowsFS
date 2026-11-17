@@ -18,7 +18,7 @@ using WindowsFS.Core.SystemItems;
 
 namespace WindowsFS.App.Tests;
 
-internal static class Program
+internal static partial class Program
 {
     private const string FixturePath = @"X:\WindowsFSFixture";
 
@@ -38,6 +38,10 @@ internal static class Program
         var tests = new (string Name, Func<Task> Run)[]
         {
             ("Details and bounded text previews leave synthetic files unchanged", FileDetails),
+            ("Image and PDF previews render bounded pages without source changes", ImageAndPdfPreviews),
+            ("Office, HWPX and OpenDocument previews extract ordered plain text without writes", DocumentPreviews),
+            ("Previews reject malformed, external and oversized content and never autoplay video", PreviewLimits),
+            ("Preview selection cancellation, page bounds and actual XAML bindings stay consistent", PreviewSelectionAndPages),
             ("Actual XAML realizes a full-width dashboard and read-only result bindings", XamlSmoke),
             ("Dashboard cards and return navigation retain saved analysis without scanning", DashboardNavigation),
             ("Page headings remain aligned and hide duplicate titles and saved-status footer", RefinedPageHeadings),

@@ -14,7 +14,8 @@ public sealed class ItemDetailsReader
     private static readonly HashSet<string> TextTypes = new(StringComparer.OrdinalIgnoreCase)
         { ".txt", ".md", ".csv", ".json", ".xml", ".log", ".ini", ".yaml", ".yml", ".cs", ".js", ".ts", ".py", ".css", ".html", ".sql" };
 
-    public static bool SupportsPreview(ResultRow row) => !row.IsDirectory && TextTypes.Contains(Path.GetExtension(row.Path));
+    public static bool SupportsPreview(ResultRow row) => FilePreviewReader.KindFor(row) != PreviewKind.Unsupported;
+    public static bool SupportsTextPreview(ResultRow row) => !row.IsDirectory && TextTypes.Contains(Path.GetExtension(row.Path));
 
     public async Task<T> RunAsync<T>(Func<T> read, CancellationToken token)
     {
@@ -46,7 +47,7 @@ public sealed class ItemDetailsReader
 
     public string ReadPreview(ResultRow row)
     {
-        if (!SupportsPreview(row)) return "텍스트 미리보기 미지원 형식";
+        if (!SupportsTextPreview(row)) return "텍스트 미리보기 미지원 형식";
         try
         {
             var path = ScanPath.ForFileSystemAccess(row.Path);

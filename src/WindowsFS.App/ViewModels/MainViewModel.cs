@@ -110,13 +110,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private CancellationTokenSource? _detailsCancellation;
     private IReadOnlyList<DetailField> _details = [];
     public IReadOnlyList<DetailField> Details => _details;
-    public string PreviewText { get; private set; } = "";
+    private readonly IFilePreviewReader _previewReader;
+    private Task _previewTask = Task.CompletedTask;
+    private long _previewRequest;
+    public FilePreview Preview { get; private set; } = new();
+    public string PreviewText => Preview.Text;
+    public bool HasPreviewPages => Preview.PageCount > 1;
+    public string PreviewPageLabel => Preview.PageCount > 0 ? $"{Preview.PageIndex + 1} / {Preview.PageCount}" : "";
     public bool HasDetails => DetailRow is { Path.Length: > 0 };
     public bool HasDetailPanel => (HasDetails || CanShowSystemInfo) && !_systemInfoDismissed;
     public bool CanShowDetails => HasDetails || CanShowSystemInfo;
     private bool _previewBusy;
     public bool CanPreview => HasDetails && ItemDetailsReader.SupportsPreview(DetailRow!);
     public ICommand PreviewCommand { get; }
+    public ICommand PreviousPreviewPageCommand { get; }
+    public ICommand NextPreviewPageCommand { get; }
 
     public MainViewModel() : this(new DiskScanner(), new FileScanResultStore(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -124,12 +132,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     // Injected scanners use an explicit store so tests and alternative hosts never write a user's cache implicitly.
     public MainViewModel(IDiskScanner scanner, IScanResultStore? store = null, SystemItemCatalog? systemCatalog = null, ItemDetailsReader? detailsReader = null,
-        IReadOnlyFileBrowser? fileBrowser = null)
+        IReadOnlyFileBrowser? fileBrowser = null, IFilePreviewReader? previewReader = null)
     {
         _scanner = scanner;
         _detailsReader = detailsReader;
         _fileBrowser = fileBrowser;
-        PreviewCommand = new RelayCommand(async _ => await LoadPreviewAsync(), _ => CanPreview && !_previewBusy);
+        _previewReader = previewReader ?? new FilePreviewReader();
+        PreviewCommand = new RelayCommand(_ => _previewTask = LoadPreviewAsync(0), _ => CanPreview && !_previewBusy);
+        PreviousPreviewPageCommand = new RelayCommand(_ => _previewTask = LoadPreviewAsync(Preview.PageIndex - 1),
+            _ => !_previewBusy && Preview.PageIndex > 0);
+        NextPreviewPageCommand = new RelayCommand(_ => _previewTask = LoadPreviewAsync(Preview.PageIndex + 1),
+            _ => !_previewBusy && Preview.PageIndex + 1 < Preview.PageCount);
         _store = store;
         _systemCatalog = systemCatalog ?? new SystemItemCatalog();
         ScanCommand = new RelayCommand(async _ => await ScanAsync(), _ => IsIdle && _drivesLoaded && (_selectedPath is not null || Drives.Count > 0));
@@ -410,7 +423,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    public void Cancel() { _scanCancellation?.Cancel(); _fileListCancellation?.Cancel(); }
+    public void Cancel() { _scanCancellation?.Cancel(); _fileListCancellation?.Cancel(); _detailsCancellation?.Cancel(); }
 
     public Task WaitForPendingSaveAsync() => _pendingSave ?? Task.CompletedTask;
 
@@ -613,9 +626,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _detailsCancellation?.Dispose();
         var cancellation = _detailsCancellation = new CancellationTokenSource();
         var row = HasDetails ? DetailRow : null;
+        _previewRequest++;
         _previewBusy = false;
-        PreviewText = row is null ? "" : CanPreview ? "텍스트 미리보기 · 최대 64 KB · UTF-8/BOM" : "텍스트 미리보기 미지원 형식";
-        Changed(nameof(PreviewText));
+        SetPreview(new FilePreview(row is null ? "" : FilePreviewReader.Description(row)));
         var fields = new List<DetailField>();
         if (row is not null)
         {
@@ -638,23 +651,38 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (OperationCanceledException) { }
     }
 
-    private async Task LoadPreviewAsync()
+    private void SetPreview(FilePreview preview)
     {
-        if (!CanPreview || _previewBusy || _detailsReader is null || _detailsCancellation is null) return;
+        Preview = preview;
+        Changed(nameof(Preview)); Changed(nameof(PreviewText)); Changed(nameof(HasPreviewPages)); Changed(nameof(PreviewPageLabel));
+        CommandManager.InvalidateRequerySuggested();
+    }
+
+    public Task WaitForPreviewAsync() => _previewTask;
+
+    private async Task LoadPreviewAsync(int pageIndex)
+    {
+        if (!CanPreview || _previewBusy || _detailsCancellation is null) return;
         var row = DetailRow!;
-        var token = _detailsCancellation.Token;
+        var request = ++_previewRequest;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_detailsCancellation.Token);
+        cancellation.CancelAfter(TimeSpan.FromSeconds(15));
+        var token = cancellation.Token;
         _previewBusy = true; CommandManager.InvalidateRequerySuggested();
-        PreviewText = "미리보기 읽는 중"; Changed(nameof(PreviewText));
+        SetPreview(Preview with { Text = "미리보기 읽는 중" });
         try
         {
-            var preview = await _detailsReader.RunAsync(() => _detailsReader.ReadPreview(row), token);
-            if (token.IsCancellationRequested || !ReferenceEquals(row, DetailRow)) return;
-            PreviewText = preview; Changed(nameof(PreviewText));
+            var preview = await _previewReader.ReadAsync(row, pageIndex, token).WaitAsync(token);
+            if (token.IsCancellationRequested || request != _previewRequest || !ReferenceEquals(row, DetailRow)) return;
+            SetPreview(preview);
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            if (request == _previewRequest && ReferenceEquals(row, DetailRow)) SetPreview(new FilePreview("미리보기 읽기 중단"));
+        }
         finally
         {
-            if (ReferenceEquals(row, DetailRow)) { _previewBusy = false; CommandManager.InvalidateRequerySuggested(); }
+            if (request == _previewRequest && ReferenceEquals(row, DetailRow)) { _previewBusy = false; CommandManager.InvalidateRequerySuggested(); }
         }
     }
 

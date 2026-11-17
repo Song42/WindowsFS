@@ -346,8 +346,13 @@
                             </DataTemplate>
                           </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <Button Content="텍스트 미리보기" Command="{Binding PreviewCommand}" Visibility="{Binding CanPreview, Converter={StaticResource Visible}}" Padding="10,7" Margin="0,0,0,8" />
-                        <TextBox Text="{Binding PreviewText, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="260" VerticalScrollBarVisibility="Auto" FontSize="11" Margin="0,0,0,18" />
+                        <Button Content="미리보기" Command="{Binding PreviewCommand}" Visibility="{Binding CanPreview, Converter={StaticResource Visible}}" Padding="10,7" Margin="0,0,0,8" />
+                        <controls:FilePreviewControl x:Name="ItemPreview" Preview="{Binding Preview}" Margin="0,0,0,8" />
+                        <StackPanel Orientation="Horizontal" Visibility="{Binding HasPreviewPages, Converter={StaticResource Visible}}" Margin="0,0,0,18">
+                          <Button Content="이전 페이지" Command="{Binding PreviousPreviewPageCommand}" Padding="8,6" />
+                          <TextBlock Text="{Binding PreviewPageLabel}" VerticalAlignment="Center" Margin="10,0" />
+                          <Button Content="다음 페이지" Command="{Binding NextPreviewPageCommand}" Padding="8,6" />
+                        </StackPanel>
                       </StackPanel>
                       <StackPanel Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}">
                       <TextBlock Text="{Binding SystemInfo.Title}" TextWrapping="Wrap" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
