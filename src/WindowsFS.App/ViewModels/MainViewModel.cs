@@ -114,6 +114,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly IMediaInfoReader _mediaInfoReader;
     private Task _mediaInfoTask = Task.CompletedTask;
     private bool _mediaInfoExpanded, _mediaInfoLoaded;
+    private bool _previewExpanded, _systemInfoExpanded;
+    public bool PreviewExpanded
+    {
+        get => _previewExpanded;
+        set { if (_previewExpanded == value) return; _previewExpanded = value; Changed(); }
+    }
+    public bool SystemInfoExpanded
+    {
+        get => _systemInfoExpanded;
+        set { if (_systemInfoExpanded == value) return; _systemInfoExpanded = value; Changed(); }
+    }
     public IReadOnlyList<MediaInfoGroup> MediaInfoGroups { get; private set; } = [];
     public string MediaInfoStatus { get; private set; } = "";
     public bool HasMediaInfo => DetailRow is { } row && MediaInfoReader.Supports(row);
@@ -641,11 +652,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _detailsCancellation?.Dispose();
         var cancellation = _detailsCancellation = new CancellationTokenSource();
         var row = HasDetails ? DetailRow : null;
-        _mediaInfoExpanded = false;
         _mediaInfoLoaded = false;
         _mediaInfoTask = Task.CompletedTask;
         MediaInfoGroups = []; MediaInfoStatus = "";
-        Changed(nameof(MediaInfoExpanded)); Changed(nameof(HasMediaInfo));
+        Changed(nameof(HasMediaInfo));
         Changed(nameof(MediaInfoGroups)); Changed(nameof(MediaInfoStatus));
         _previewRequest++;
         _previewBusy = false;
@@ -663,6 +673,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         _details = fields.ToArray(); Changed(nameof(Details));
         _previewTask = CanPreview ? LoadPreviewAsync(0) : Task.CompletedTask;
+        _mediaInfoTask = MediaInfoExpanded && HasMediaInfo ? LoadMediaInfoAsync() : Task.CompletedTask;
         if (row is null || _detailsReader is null) return;
         try
         {

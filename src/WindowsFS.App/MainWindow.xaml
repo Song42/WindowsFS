@@ -348,7 +348,10 @@
                             </ItemsControl.ItemTemplate>
                           </ItemsControl>
                         </StackPanel>
-                        <StackPanel Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}">
+                      </StackPanel>
+                      <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0" Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}">
+                        <Expander x:Name="SystemInfoSection" Header="Windows 파일 설명" IsExpanded="{Binding SystemInfoExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
+                        <StackPanel Margin="0,14,0,0">
                         <TextBlock Text="{Binding SystemInfo.Title}" TextWrapping="Wrap" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
                         <controls:ResponsiveDetailsPanel>
                         <StackPanel>
@@ -373,7 +376,8 @@
                         </Border>
                         <Button Content="Microsoft 문서 ↗" Command="{Binding OpenSystemHelpCommand}" Margin="0,15,0,0" Padding="12,9" FontSize="11" />
                         </StackPanel>
-                      </StackPanel>
+                        </Expander>
+                      </Border>
                       <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0" Visibility="{Binding HasMediaInfo, Converter={StaticResource Visible}}">
                         <Expander x:Name="MediaInfoSection" Header="MediaInfo" IsExpanded="{Binding MediaInfoExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
                           <StackPanel Margin="0,14,0,0">
@@ -403,9 +407,9 @@
                           </StackPanel>
                         </Expander>
                       </Border>
-                      <Border x:Name="PreviewSection" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0" Visibility="{Binding HasDetails, Converter={StaticResource Visible}}">
-                        <StackPanel>
-                          <TextBlock Text="미리보기" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,14" />
+                      <Border x:Name="PreviewSection" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0" Visibility="{Binding CanPreview, Converter={StaticResource Visible}}">
+                        <Expander x:Name="PreviewExpander" Header="미리보기" IsExpanded="{Binding PreviewExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
+                        <StackPanel Margin="0,14,0,0">
                           <controls:FilePreviewControl x:Name="ItemPreview" Preview="{Binding Preview}" Margin="0,0,0,8" />
                           <StackPanel x:Name="PreviewPageNavigation" Orientation="Horizontal" HorizontalAlignment="Center" Visibility="{Binding HasPreviewPages, Converter={StaticResource Visible}}">
                             <Button Content="이전 페이지" Command="{Binding PreviousPreviewPageCommand}" Padding="8,6" />
@@ -413,6 +417,7 @@
                             <Button Content="다음 페이지" Command="{Binding NextPreviewPageCommand}" Padding="8,6" />
                           </StackPanel>
                         </StackPanel>
+                        </Expander>
                       </Border>
                     </StackPanel>
                   </ScrollViewer>

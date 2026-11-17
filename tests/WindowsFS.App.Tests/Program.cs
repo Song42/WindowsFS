@@ -39,7 +39,7 @@ internal static partial class Program
         {
             ("MediaInfo reads native audio and video tracks without source changes", NativeMediaInfo),
             ("MediaInfo rejects external references and observes cancellation", MediaInfoBoundaries),
-            ("MediaInfo XAML defaults collapsed, reads once and rejects stale selection results", MediaInfoSelection),
+            ("MediaInfo preserves section state, reads once and rejects stale selection results", MediaInfoSelection),
             ("Details and bounded text previews leave synthetic files unchanged", FileDetails),
             ("Image and PDF previews render bounded pages without source changes", ImageAndPdfPreviews),
             ("MP3 selection prepares compact audio controls without playback or source changes", AudioPreviews),
@@ -1845,6 +1845,16 @@ internal static partial class Program
             var panel = window.FindName("SystemInfoPanel") as FrameworkElement;
             Check(panel is not null && panel.Visibility == Visibility.Visible,
                 "The system explanation panel is not displayed for a known selection.");
+            var systemSection = (Expander)window.FindName("SystemInfoSection");
+            var previewSection = (Border)window.FindName("PreviewSection");
+            var previewExpander = (Expander)window.FindName("PreviewExpander");
+            Check(!systemSection.IsExpanded && !previewExpander.IsExpanded && !vm.MediaInfoExpanded,
+                "Optional detail sections must start collapsed.");
+            Equal(Visibility.Collapsed, previewSection.Visibility);
+            var general = (StackPanel)window.FindName("GeneralSection");
+            Check(!Descendants<Expander>(general).Any(), "Optional sections remain inside General.");
+            systemSection.IsExpanded = true;
+            Render(content);
             var info = vm.SystemInfo!;
             var visibleText = Descendants<TextBlock>(panel!).Select(text => text.Text).ToArray();
             foreach (var expected in new[] { info.Title, info.Purpose, info.ManagedBy,
@@ -1854,6 +1864,24 @@ internal static partial class Program
             vm.SelectedRow = vm.Rows.Single(row => row.Path.EndsWith("report.docx", StringComparison.Ordinal));
             Render(content);
             Equal(Visibility.Visible, panel!.Visibility);
+            Equal(Visibility.Visible, previewSection.Visibility);
+            Check(systemSection.IsExpanded && vm.SystemInfoExpanded, "Hidden system explanation lost expansion state.");
+            Equal(Visibility.Collapsed, ((Border)systemSection.Parent).Visibility);
+            previewExpander.IsExpanded = true;
+            vm.SelectedRow = vm.SelectedRow! with { IsDirectory = true };
+            Render(content);
+            Equal(Visibility.Collapsed, previewSection.Visibility);
+            Check(vm.PreviewExpanded, "Folder selection reset preview expansion.");
+            vm.SelectedRow = vm.Rows.Single(row => row.Path == @"X:\pagefile.sys");
+            Render(content);
+            Check(systemSection.IsExpanded && vm.SystemInfoExpanded, "System explanation did not reopen in its preserved state.");
+            vm.SelectedRow = vm.Rows.Single(row => row.Path.EndsWith("report.docx", StringComparison.Ordinal));
+            Render(content);
+            Check(previewExpander.IsExpanded && vm.PreviewExpanded, "Supported preview did not preserve expansion after a folder.");
+            previewExpander.IsExpanded = false;
+            vm.SelectedRow = vm.Rows.Single(row => row.Path == @"X:\pagefile.sys");
+            vm.SelectedRow = vm.Rows.Single(row => row.Path.EndsWith("report.docx", StringComparison.Ordinal));
+            Check(!vm.PreviewExpanded, "Explicit preview collapse did not persist.");
             Check(vm.HasDetails && !vm.HasSystemInfo && vm.Details.Any(field => field.Value == vm.SelectedRow.Path), "A normal file lost its own details.");
             vm.DismissSystemInfoCommand.Execute(null);
             Render(content);

@@ -133,11 +133,10 @@ internal static partial class Program
             var firstToken = reader.LastToken;
             section.IsExpanded = false; section.IsExpanded = true;
             Equal(1, reader.Calls);
+            reader.Read = (_, _) => Task.FromResult(new MediaInfoResult([new("오디오 1", [new("Format", "FLAC")])]));
             vm.SelectedRow = PreviewRow($@"{FixturePath}\second.flac");
             await firstLoad;
-            Check(firstToken.IsCancellationRequested && !vm.MediaInfoExpanded && vm.MediaInfoGroups.Count == 0, "Selection did not reset media details.");
-            reader.Read = (_, _) => Task.FromResult(new MediaInfoResult([new("오디오 1", [new("Format", "FLAC")])]));
-            vm.MediaInfoExpanded = true;
+            Check(firstToken.IsCancellationRequested && vm.MediaInfoExpanded, "Selection did not preserve expansion and cancel old metadata.");
             await vm.WaitForMediaInfoAsync();
             pending.SetResult(new MediaInfoResult([new("stale", [])])); DrainDispatcher();
             Equal("오디오 1", vm.MediaInfoGroups.Single().Title);
@@ -146,7 +145,14 @@ internal static partial class Program
             Render((FrameworkElement)window.Content);
             Check(Descendants<TextBlock>(section).Any(text => text.Text == "FLAC"), "Actual XAML omitted track fields.");
             vm.SelectedRow = PreviewRow($@"{FixturePath}\notes.txt");
-            Check(!vm.HasMediaInfo && !vm.MediaInfoExpanded && vm.MediaInfoGroups.Count == 0, "Non-media retained metadata.");
+            Check(!vm.HasMediaInfo && vm.MediaInfoExpanded && vm.MediaInfoGroups.Count == 0, "Non-media retained metadata or reset expansion.");
+            vm.SelectedRow = PreviewRow($@"{FixturePath}\third.flac");
+            await vm.WaitForMediaInfoAsync();
+            Equal(3, reader.Calls);
+            vm.MediaInfoExpanded = false;
+            vm.SelectedRow = PreviewRow($@"{FixturePath}\fourth.flac");
+            Equal(3, reader.Calls);
+            Check(!vm.MediaInfoExpanded, "Explicit collapse did not persist across selection.");
             Check(!window.IsVisible, "Tests must not show windows.");
         }
         finally { window.Close(); }
