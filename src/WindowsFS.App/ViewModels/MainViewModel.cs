@@ -31,8 +31,11 @@ public sealed class DriveItem(string path, string label, string capacity, double
     public bool IsSelected { get => _selected; set { _selected = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected))); } }
     public event PropertyChangedEventHandler? PropertyChanged;
 }
+public enum FolderNavigationKind { None, Current, Parent }
+
 public sealed record ResultRow(string Name, string Path, long Bytes, long Count, bool IsDirectory, string Kind, double Share)
 {
+    public FolderNavigationKind Navigation { get; init; }
     public string Size => DisplayFormat.Bytes(Bytes);
     public string CountText => Count < 0 ? Kind : $"{Count:N0}개 파일";
     public string ShareText => $"{Share:0.0}%";
@@ -88,7 +91,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private SpaceMapLayout _mapLayout = SpaceMapLayout.Blocks;
     private ResultRow? _selectedRow;
     private ResultRow? _currentFolderRow;
-    private ResultRow? DetailRow => _view == "types" ? null : _selectedRow ?? _currentFolderRow;
+    private ResultRow? DetailRow => _view == "types" ? null : _selectedRow?.Navigation == FolderNavigationKind.Current
+        ? _currentFolderRow : _selectedRow ?? _currentFolderRow;
     private SystemItemInfo? _systemInfo;
     private bool _systemInfoDismissed;
     private readonly ItemDetailsReader? _detailsReader;
@@ -226,8 +230,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string MapHint => IsDonutMap ? "각도 = 용량 비율 · 클릭: 폴더 열기" : "영역 크기 = 용량 · 클릭: 폴더 열기";
     public string ResultCount => $"{Rows.Count:N0}개 항목";
     public string Search { get => _search; set { if (_search == value) return; _search = value; Changed(); RefreshRows(); } }
-    public IReadOnlyList<ResultRow> Rows { get => _rows; private set { _rows = value; Changed(); Changed(nameof(ResultCount)); Changed(nameof(NoRows)); } }
-    public bool NoRows => _result is not null && Rows.Count == 0;
+    public IReadOnlyList<ResultRow> Rows { get => _rows; private set { _rows = value; RefreshDisplayRows(); Changed(); Changed(nameof(ResultCount)); Changed(nameof(NoRows)); } }
+    public IReadOnlyList<ResultRow> DisplayRows { get; private set; } = [];
+    public bool NoRows => _result is not null && DisplayRows.Count == 0;
     public IReadOnlyList<MapItem> MapItems { get => _mapItems; private set { _mapItems = value; Changed(); } }
     public ResultRow? SelectedRow
     {
@@ -566,7 +571,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void UpdateSystemInfo()
     {
         // Descriptions are an exact-path catalog lookup; selecting an item never opens its contents.
-        _systemInfo = _view == "types" ? null : _selectedRow is { } row
+        _systemInfo = _view == "types" ? null : DetailRow is { } row
             ? _systemCatalog.Describe(row.Path, row.IsDirectory)
             : _view == "folders" && _folderPath is not null
                 ? _systemCatalog.Describe(_folderPath, true) : null;
@@ -670,6 +675,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Rows = rows.ToArray();
     }
 
+    private void RefreshDisplayRows()
+    {
+        if (_view != "folders" || _result is null) DisplayRows = Rows;
+        else
+        {
+            var aggregate = new ResultRow("전체", "", _result.TotalBytes, _result.FileCount, true, "폴더", Share(_result.TotalBytes));
+            var current = _currentFolderRow ?? aggregate;
+            var parent = _folderPath is not null && _parents.TryGetValue(_folderPath, out var parentPath) &&
+                _folders.TryGetValue(parentPath, out var node)
+                ? new ResultRow(node.Name, node.Path, node.TotalBytes, node.FileCount, true, "폴더", Share(node.TotalBytes)) : aggregate;
+            DisplayRows = [current with { Name = ".", Navigation = FolderNavigationKind.Current },
+                parent with { Name = "..", Navigation = FolderNavigationKind.Parent }, .. Rows];
+        }
+        Changed(nameof(DisplayRows));
+    }
+
     private void RefreshMap()
     {
         if (_result is null) { MapItems = []; return; }
@@ -686,6 +707,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void OpenRow(ResultRow? row)
     {
+        if (row?.Navigation == FolderNavigationKind.Current)
+        {
+            SelectedRow = row;
+            return;
+        }
+        if (row?.Navigation == FolderNavigationKind.Parent)
+        {
+            if (UpCommand.CanExecute(null)) UpCommand.Execute(null);
+            return;
+        }
         if (row is { IsDirectory: true }) NavigateMap(new MapItem(row.Name, row.Size, row.Bytes, row.Path, true));
         else if (row is { Path.Length: > 0 }) Reveal(row.Path);
     }

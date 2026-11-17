@@ -138,7 +138,7 @@ internal static class Program
             {
                 vm.NavigateCommand.Execute(view);
                 Render(content);
-                Equal(vm.Rows.Count, grid.Items.Count);
+                Equal(vm.DisplayRows.Count, grid.Items.Count);
             }
             Check(!window.IsVisible, "The test must not display a native window.");
         }
@@ -456,16 +456,26 @@ internal static class Program
             Check(vm.HasDetails && IsEffectivelyVisible(details) &&
                 vm.Details.Any(field => field.Label == "전체 경로" && field.Value == $@"{FixturePath}\Projects\Archive"),
                 "Entering an ordinary folder discarded that folder's details.");
-            var dot = (Button)window.FindName("CurrentFolderEntry");
-            var parent = (Button)window.FindName("ParentFolderEntry");
-            Check(IsEffectivelyVisible(dot) && IsEffectivelyVisible(parent) && dot.Command is null &&
-                ReferenceEquals(parent.Command, vm.UpCommand), "Pinned dot entries are missing or have the wrong action.");
-            var currentDetails = vm.Details;
-            dot.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Check(ReferenceEquals(currentDetails, vm.Details), "Clicking dot changed the current details.");
+            var grid = (DataGrid)window.FindName("ResultsGrid");
+            var dot = (ResultRow)grid.Items[0];
+            var parent = (ResultRow)grid.Items[1];
+            Equal(".", dot.Name);
+            Equal("..", parent.Name);
+            Equal(200L, dot.Bytes);
+            Equal(600L, parent.Bytes);
+            Equal(20d, dot.Share);
+            Equal(60d, parent.Share);
+            vm.DismissSystemInfoCommand.Execute(null);
+            grid.SelectedItem = dot;
+            Render(content);
+            Check(vm.HasDetailPanel && vm.Details.Any(field => field.Label == "전체 경로" && field.Value == vm.Breadcrumb),
+                "Selecting dot did not show the current folder details.");
+            Check(grid.ItemContainerGenerator.ContainerFromIndex(0) is DataGridRow,
+                "Dot is not a regular result row below the column headers.");
             vm.Search = "no matching folders";
             Render(content);
-            Check(IsEffectivelyVisible(dot) && IsEffectivelyVisible(parent) && IsEffectivelyVisible(details),
+            Check(grid.Items.Count == 2 && ((ResultRow)grid.Items[0]).Navigation == FolderNavigationKind.Current &&
+                ((ResultRow)grid.Items[1]).Navigation == FolderNavigationKind.Parent && IsEffectivelyVisible(details),
                 "An empty folder list hid navigation entries or current-folder details.");
             var ancestor = Descendants<Button>(trail).Single(button =>
                 button.DataContext is BreadcrumbItem item && item.Path == $@"{FixturePath}\Projects");
@@ -481,9 +491,24 @@ internal static class Program
             Render(content);
             Equal(FixturePath, vm.Breadcrumb);
             Equal(2, vm.Rows.Count);
-            parent.Command!.Execute(parent.CommandParameter);
+            foreach (var column in grid.Columns)
+            {
+                for (var direction = 0; direction < 2; direction++)
+                {
+                    typeof(DataGrid).GetMethod("OnSorting", BindingFlags.Instance | BindingFlags.NonPublic)!
+                        .Invoke(grid, [new DataGridSortingEventArgs(column)]);
+                    Render(content);
+                    Equal(FolderNavigationKind.Current, ((ResultRow)grid.Items[0]).Navigation);
+                    Equal(FolderNavigationKind.Parent, ((ResultRow)grid.Items[1]).Navigation);
+                    var actual = grid.Items.Cast<ResultRow>().Skip(2).ToArray();
+                    var comparison = new ResultRowComparer(column.SortMemberPath, column.SortDirection!.Value);
+                    Check(actual.Zip(actual.Skip(1)).All(pair => comparison.Compare(pair.First, pair.Second) <= 0),
+                        "Ordinary folders no longer obey column sorting.");
+                }
+            }
+            vm.OpenRowCommand.Execute(grid.Items[1]);
             Render(content);
-            Check(vm.BreadcrumbItems.Count == 1 && !parent.IsEnabled && IsEffectivelyVisible(parent),
+            Check(vm.BreadcrumbItems.Count == 1 && !vm.UpCommand.CanExecute(null) && grid.Items.Count >= 2,
                 "Parent navigation did not stop at the analyzed scope.");
             Check(!vm.HasDetails && !IsEffectivelyVisible(details), "The aggregate view retained stale folder details.");
             Equal(0, scanner.ProgressReports.Count);

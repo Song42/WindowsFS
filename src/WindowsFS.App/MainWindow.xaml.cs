@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using WindowsFS.App.Controls;
 using WindowsFS.App.ViewModels;
@@ -49,17 +50,31 @@ public partial class MainWindow : Window
         if (e.ExtentWidthChange != 0 && sender is ScrollViewer scroll) scroll.ScrollToRightEnd();
     }
     private void MapItemInvoked(object? sender, MapItem e) => _viewModel.NavigateMap(e);
-    private void ParentFolderMouseDown(object sender, MouseButtonEventArgs e)
+    private void ResultsSorting(object sender, DataGridSortingEventArgs e)
     {
-        if (e.ClickCount > 1) e.Handled = true;
+        if (sender is not DataGrid grid || DataContext is not MainViewModel { IsFolders: true }) return;
+        e.Handled = true;
+        var direction = e.Column.SortDirection == ListSortDirection.Ascending
+            ? ListSortDirection.Descending : ListSortDirection.Ascending;
+        foreach (var column in grid.Columns) column.SortDirection = null;
+        if (CollectionViewSource.GetDefaultView(grid.ItemsSource) is ListCollectionView view)
+            view.CustomSort = new ResultRowComparer(e.Column.SortMemberPath, direction);
+        e.Column.SortDirection = direction;
     }
     private void ResultsDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (ItemsControl.ContainerFromElement(ResultsGrid, e.OriginalSource as DependencyObject) is DataGridRow row)
-            _viewModel.OpenRowCommand.Execute(row.Item);
+            ((MainViewModel)DataContext).OpenRowCommand.Execute(row.Item);
+    }
+    private void ResultsMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (ItemsControl.ContainerFromElement(ResultsGrid, e.OriginalSource as DependencyObject) is DataGridRow
+            { IsSelected: true, Item: ResultRow { Navigation: FolderNavigationKind.Current } current } &&
+            DataContext is MainViewModel vm)
+            vm.SelectedRow = current;
     }
     private void ResultsKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter) { _viewModel.OpenRowCommand.Execute(ResultsGrid.SelectedItem); e.Handled = true; }
+        if (e.Key == Key.Enter) { ((MainViewModel)DataContext).OpenRowCommand.Execute(ResultsGrid.SelectedItem); e.Handled = true; }
     }
 }
