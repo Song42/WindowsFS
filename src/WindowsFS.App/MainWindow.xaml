@@ -4,41 +4,48 @@
   </shell:WindowChrome.WindowChrome>
   <Window.Resources>
     <controls:SpaceMapVisibilityConverter x:Key="SpaceMapVisibility" />
-    <ControlTemplate x:Key="QuestionHeader" TargetType="ToggleButton">
+    <ControlTemplate x:Key="DetailSectionHeader" TargetType="ToggleButton">
       <Border x:Name="HeaderSurface" Background="Transparent" CornerRadius="5" Padding="4,5">
         <Grid>
-          <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-          <ContentPresenter VerticalAlignment="Center" />
-          <Path x:Name="Arrow" Grid.Column="1" Data="M 2,7 L 8,13 L 14,7 M 8,2 L 8,13"
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+          <Path x:Name="Chevron" Data="M 3,6 L 8,11 L 13,6"
                 Stroke="{StaticResource Muted}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                StrokeLineJoin="Round" Width="16" Height="16" Margin="10,0,2,0" VerticalAlignment="Center" />
+                StrokeLineJoin="Round" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+          <ContentPresenter Grid.Column="1" VerticalAlignment="Center" TextElement.Foreground="White" />
         </Grid>
       </Border>
       <ControlTemplate.Triggers>
         <Trigger Property="IsChecked" Value="True">
-          <Setter TargetName="Arrow" Property="Data" Value="M 2,9 L 8,3 L 14,9 M 8,14 L 8,3" />
+          <Setter TargetName="Chevron" Property="Data" Value="M 3,10 L 8,5 L 13,10" />
         </Trigger>
         <Trigger Property="IsMouseOver" Value="True">
           <Setter TargetName="HeaderSurface" Property="Background" Value="{StaticResource Border}" />
         </Trigger>
         <Trigger Property="IsKeyboardFocused" Value="True">
-          <Setter TargetName="Arrow" Property="Stroke" Value="{StaticResource Accent}" />
+          <Setter TargetName="Chevron" Property="Stroke" Value="{StaticResource Accent}" />
         </Trigger>
       </ControlTemplate.Triggers>
     </ControlTemplate>
-    <ControlTemplate x:Key="QuestionExpander" TargetType="Expander">
+    <ControlTemplate x:Key="DetailSectionTemplate" TargetType="Expander">
       <StackPanel>
-        <ToggleButton Template="{StaticResource QuestionHeader}" Cursor="Hand" AutomationProperties.Name="{Binding Question}"
-                      AutomationProperties.HelpText="{Binding RequestStatus}" Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+        <ToggleButton Template="{StaticResource DetailSectionHeader}" Cursor="Hand" AutomationProperties.Name="{TemplateBinding AutomationProperties.Name}"
+                      AutomationProperties.HelpText="{TemplateBinding AutomationProperties.HelpText}" Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
                       IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" />
-        <ContentPresenter x:Name="AnswerBody" Visibility="Collapsed" />
+        <ContentPresenter x:Name="SectionBody" Visibility="Collapsed" />
       </StackPanel>
       <ControlTemplate.Triggers>
         <Trigger Property="IsExpanded" Value="True">
-          <Setter TargetName="AnswerBody" Property="Visibility" Value="Visible" />
+          <Setter TargetName="SectionBody" Property="Visibility" Value="Visible" />
         </Trigger>
       </ControlTemplate.Triggers>
     </ControlTemplate>
+    <Style x:Key="DetailSection" TargetType="Expander">
+      <Setter Property="Template" Value="{StaticResource DetailSectionTemplate}" />
+      <Setter Property="AutomationProperties.Name" Value="{Binding Header, RelativeSource={RelativeSource Self}}" />
+      <Setter Property="Foreground" Value="{StaticResource Text}" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
   </Window.Resources>
   <Window.InputBindings>
     <KeyBinding Key="F5" Command="{Binding ScanCommand}" />
@@ -411,7 +418,7 @@
                   </Grid>
                   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,0,8,0">
-                      <Expander x:Name="GeneralSection" Header="General" IsExpanded="{Binding GeneralExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
+                      <Expander x:Name="GeneralSection" Style="{StaticResource DetailSection}" Header="General" IsExpanded="{Binding GeneralExpanded, Mode=TwoWay}">
                         <StackPanel Margin="0,14,0,0" Visibility="{Binding HasDetails, Converter={StaticResource Visible}}">
                           <ItemsControl x:Name="DetailFields" ItemsSource="{Binding Details}">
                             <ItemsControl.ItemsPanel>
@@ -429,7 +436,7 @@
                         </StackPanel>
                       </Expander>
                       <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0" Visibility="{Binding HasSystemInfo, Converter={StaticResource Visible}}">
-                        <Expander x:Name="SystemInfoSection" Header="Windows 파일 설명" IsExpanded="{Binding SystemInfoExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
+                        <Expander x:Name="SystemInfoSection" Style="{StaticResource DetailSection}" Header="Windows 파일 설명" IsExpanded="{Binding SystemInfoExpanded, Mode=TwoWay}">
                         <StackPanel Margin="0,14,0,0">
                         <TextBlock Text="{Binding SystemInfo.Title}" TextWrapping="Wrap" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
                         <controls:ResponsiveDetailsPanel>
@@ -458,7 +465,7 @@
                         </Expander>
                       </Border>
                       <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0" Visibility="{Binding HasMediaInfo, Converter={StaticResource Visible}}">
-                        <Expander x:Name="MediaInfoSection" Header="MediaInfo" IsExpanded="{Binding MediaInfoExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
+                        <Expander x:Name="MediaInfoSection" Style="{StaticResource DetailSection}" Header="MediaInfo" IsExpanded="{Binding MediaInfoExpanded, Mode=TwoWay}">
                           <StackPanel Margin="0,14,0,0">
                             <TextBlock Text="{Binding MediaInfoStatus}" Foreground="{StaticResource Muted}" TextWrapping="Wrap" FontSize="11" />
                             <ItemsControl ItemsSource="{Binding MediaInfoGroups}">
@@ -487,7 +494,7 @@
                         </Expander>
                       </Border>
                       <Border x:Name="PreviewSection" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0" Visibility="{Binding CanPreview, Converter={StaticResource Visible}}">
-                        <Expander x:Name="PreviewExpander" Header="미리보기" IsExpanded="{Binding PreviewExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
+                        <Expander x:Name="PreviewExpander" Style="{StaticResource DetailSection}" Header="미리보기" IsExpanded="{Binding PreviewExpanded, Mode=TwoWay}">
                         <StackPanel Margin="0,14,0,0">
                           <controls:FilePreviewControl x:Name="ItemPreview" Preview="{Binding Preview}" Margin="0,0,0,8" />
                           <StackPanel x:Name="PreviewPageNavigation" Orientation="Horizontal" HorizontalAlignment="Center" Visibility="{Binding HasPreviewPages, Converter={StaticResource Visible}}">
@@ -502,13 +509,14 @@
                         <ItemsControl.ItemTemplate>
                           <DataTemplate>
                             <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0">
-                              <Expander Template="{StaticResource QuestionExpander}" Header="{Binding}" IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
+                              <Expander Style="{StaticResource DetailSection}" Header="{Binding}" IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                                        AutomationProperties.Name="{Binding Question}" AutomationProperties.HelpText="{Binding RequestStatus}">
                                 <Expander.HeaderTemplate>
                                   <DataTemplate>
-                                    <WrapPanel>
+                                    <StackPanel Orientation="Horizontal">
                                       <TextBlock Text="{Binding Question}" Margin="0,0,10,0" />
                                       <TextBlock Text="{Binding RequestStatus}" Foreground="{StaticResource Muted}" VerticalAlignment="Center" FontSize="12" />
-                                    </WrapPanel>
+                                    </StackPanel>
                                   </DataTemplate>
                                 </Expander.HeaderTemplate>
                                 <StackPanel Margin="0,12,0,0">

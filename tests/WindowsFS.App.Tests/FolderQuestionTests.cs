@@ -63,6 +63,16 @@ internal static partial class Program
             var cachedHeader = Descendants<ToggleButton>(cached).Single();
             var arrow = Descendants<System.Windows.Shapes.Path>(cachedHeader).Single();
             var down = arrow.Data.ToString();
+            foreach (var name in new[] { "GeneralSection", "SystemInfoSection", "MediaInfoSection", "PreviewExpander" })
+                Check(ReferenceEquals(((Expander)window.FindName(name)).Template, cached.Template), $"{name} has a different header template.");
+            var general = (Expander)window.FindName("GeneralSection");
+            var generalTitle = Descendants<TextBlock>(Descendants<ToggleButton>(general).First()).Single(t => t.Text == "General");
+            var questionTitle = Descendants<TextBlock>(cachedHeader).Single(t => t.Text == FolderQuestions.DeleteQuestion);
+            foreach (var title in new[] { generalTitle, questionTitle })
+                Check(title.Foreground is System.Windows.Media.SolidColorBrush brush && brush.Color == System.Windows.Media.Colors.White,
+                    "Section title did not render in white.");
+            Check(arrow.TranslatePoint(new Point(arrow.ActualWidth, 0), cachedHeader).X <= questionTitle.TranslatePoint(new Point(), cachedHeader).X,
+                "The chevron must precede the section title.");
             Check(Descendants<TextBlock>(cachedHeader).Where(t => t.Text.Length > 0).Select(t => t.Text)
                 .SequenceEqual([FolderQuestions.DeleteQuestion]), "A cached question should only show its title.");
             Check(Descendants<TextBlock>(fresh).Any(t => t.Text == "요청하기"), "Missing new request label.");
@@ -79,7 +89,8 @@ internal static partial class Program
                 "Missing multiline answer skeleton.");
             fresh.IsExpanded = false;
             Render((FrameworkElement)window.Content);
-            Check(Descendants<TextBlock>(fresh).Any(t => t.Text == "답변 요청 중"), "Collapsed header lost its pending state.");
+            Check(Descendants<TextBlock>(Descendants<ToggleButton>(fresh).Single()).Where(t => t.Text.Length > 0).Select(t => t.Text)
+                .SequenceEqual([FolderQuestions.PurposeQuestion]), "A pending question should only show its title.");
             fresh.IsExpanded = true;
             fresh.IsExpanded = false;
             var section = (FolderQuestionSection)fresh.DataContext;
@@ -148,7 +159,7 @@ internal static partial class Program
         Check(vm.QuestionSections.All(s => !s.IsExpanded && s.Text.Length == 0), "Selection inherited another folder's requests.");
         vm.SelectedRow = vm.DisplayRows.Single(row => row.Navigation == FolderNavigationKind.Current);
         var revisited = vm.QuestionSections[0];
-        Equal("답변 요청 중", revisited.RequestStatus);
+        Equal("", revisited.RequestStatus);
         revisited.IsExpanded = true;
         replies[0].SetResult("answer one");
         await first.Pending;
