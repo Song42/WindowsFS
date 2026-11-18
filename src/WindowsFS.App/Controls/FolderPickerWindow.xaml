@@ -21,7 +21,9 @@
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
-      <Button Content="↑" Command="{Binding UpCommand}" Padding="13,9" Margin="0,0,8,0" ToolTip="상위 폴더" AutomationProperties.Name="상위 폴더" />
+      <Button Command="{Binding UpCommand}" Padding="13,9" Margin="0,0,8,0" ToolTip="상위 폴더" AutomationProperties.Name="상위 폴더">
+        <Path Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronUp}" />
+      </Button>
       <TextBox x:Name="PathInputBox" Grid.Column="1" Text="{Binding PathInput, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" AllowDrop="False" KeyDown="PathKeyDown" AutomationProperties.Name="폴더 경로" />
       <Button Grid.Column="2" Content="이동" Command="{Binding GoCommand}" Margin="8,0,0,0" Padding="15,9" />
     </Grid>

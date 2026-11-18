@@ -83,6 +83,7 @@ internal static partial class Program
             ("Folder picker ignores stale reads and completion after cancellation", FolderPickerCancellation),
             ("Actual folder picker XAML exposes navigation without file operations", FolderPickerXaml),
             ("Long file lists support precise wheel and scrollbar navigation at compact sizes", LongListScrolling),
+            ("Horizontal scroll chevrons move the viewport in both directions", HorizontalScrollChevrons),
             ("Folder navigation, file-type totals, and filtered search stay consistent", Navigation),
             ("Case-distinct folder branches remain independently navigable after scan and restore", CaseDistinctNavigation),
             ("Treemap grouping preserves all represented bytes", GroupedMap),
@@ -211,6 +212,8 @@ internal static partial class Program
                 back.Visibility == Visibility.Collapsed, "The initial dashboard or its return control is inconsistent.");
             foreach (var (button, view) in cards)
             {
+                Check(Descendants<System.Windows.Shapes.Path>(button).Any(p => ReferenceEquals(p.Data, window.FindResource("ChevronRight"))),
+                    "A dashboard card did not display the shared forward chevron.");
                 Check(ReferenceEquals(button.Command, vm.NavigateCommand) && Equals(button.CommandParameter, view),
                     "A dashboard card is not bound to its analysis page.");
                 Check(button.IsEnabled, "An empty analysis stranded dashboard navigation.");
@@ -218,6 +221,8 @@ internal static partial class Program
                 Render(content);
                 Check(vm.IsDetailView && navigation.Visibility == Visibility.Collapsed && back.Visibility == Visibility.Visible,
                     "A detail page did not replace the dashboard navigation with its return control.");
+                Check(Descendants<System.Windows.Shapes.Path>(back).Any(p => ReferenceEquals(p.Data, window.FindResource("ChevronLeft"))),
+                    "Dashboard return did not display the shared back chevron.");
                 Check(vm.ShowEmpty && vm.Rows.Count == 0, "Opening an empty detail page fabricated results.");
                 Check(delete.Visibility == Visibility.Visible && !delete.IsEnabled,
                     "The global saved-analysis action disappeared or became enabled without a snapshot.");
@@ -877,6 +882,31 @@ internal static partial class Program
             Check(!window.IsVisible, "Folder picker tests must not display a native window.");
         }
         finally { window.Close(); }
+    }
+
+    private static Task HorizontalScrollChevrons()
+    {
+        var viewer = new ScrollViewer
+        {
+            Content = new Border { Width = 1000, Height = 20 },
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled
+        };
+        var size = new Size(240, 80);
+        LayoutAt(viewer, size);
+        var bar = Descendants<ScrollBar>(viewer).Single(b => b.Orientation == Orientation.Horizontal);
+        foreach (var (command, icon) in new[] { (ScrollBar.LineRightCommand, "ChevronRight"), (ScrollBar.LineLeftCommand, "ChevronLeft") })
+        {
+            var step = Descendants<RepeatButton>(bar).Single(b => b.Command == command);
+            Check(Descendants<System.Windows.Shapes.Path>(step).Any(p => ReferenceEquals(p.Data, viewer.FindResource(icon))),
+                "Horizontal scroll step lost its directional chevron.");
+            var before = viewer.HorizontalOffset;
+            command.Execute(null, step);
+            LayoutAt(viewer, size);
+            Check(command == ScrollBar.LineRightCommand ? viewer.HorizontalOffset > before : viewer.HorizontalOffset < before,
+                "The horizontal scroll button did not move the viewport.");
+        }
+        return Task.CompletedTask;
     }
 
     private static async Task LongListScrolling()

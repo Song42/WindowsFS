@@ -7,6 +7,68 @@
     <SolidColorBrush x:Key="Muted" Color="#959CAB" />
     <SolidColorBrush x:Key="Accent" Color="#C4B5FD" />
     <BooleanToVisibilityConverter x:Key="Visible" />
+    <Geometry x:Key="ChevronDown">M 3,6 L 8,11 L 13,6</Geometry>
+    <Geometry x:Key="ChevronUp">M 3,10 L 8,5 L 13,10</Geometry>
+    <Geometry x:Key="ChevronLeft">M 10,3 L 5,8 L 10,13</Geometry>
+    <Geometry x:Key="ChevronRight">M 6,3 L 11,8 L 6,13</Geometry>
+    <Geometry x:Key="ChevronUpRight">M 4,5 L 11,5 L 11,12</Geometry>
+    <Style x:Key="ChevronIcon" TargetType="Path">
+      <Setter Property="Width" Value="16" />
+      <Setter Property="Height" Value="16" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Stroke" Value="{StaticResource Muted}" />
+      <Setter Property="StrokeThickness" Value="1.6" />
+      <Setter Property="StrokeStartLineCap" Value="Round" />
+      <Setter Property="StrokeEndLineCap" Value="Round" />
+      <Setter Property="StrokeLineJoin" Value="Round" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+    <DataTemplate x:Key="ExternalLinkLabel">
+      <StackPanel Orientation="Horizontal">
+        <TextBlock Text="{Binding}" VerticalAlignment="Center" />
+        <Path Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronUpRight}" Margin="4,0,0,0" />
+      </StackPanel>
+    </DataTemplate>
+    <ControlTemplate x:Key="DetailSectionHeader" TargetType="ToggleButton">
+      <Border x:Name="HeaderSurface" Background="Transparent" CornerRadius="5" Padding="4,5">
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+          <Path x:Name="Chevron" Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronDown}" Margin="0,0,8,0" />
+          <ContentPresenter Grid.Column="1" VerticalAlignment="Center" TextElement.Foreground="White" />
+        </Grid>
+      </Border>
+      <ControlTemplate.Triggers>
+        <Trigger Property="IsChecked" Value="True">
+          <Setter TargetName="Chevron" Property="Data" Value="{StaticResource ChevronUp}" />
+        </Trigger>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter TargetName="HeaderSurface" Property="Background" Value="{StaticResource Border}" />
+        </Trigger>
+        <Trigger Property="IsKeyboardFocused" Value="True">
+          <Setter TargetName="Chevron" Property="Stroke" Value="{StaticResource Accent}" />
+        </Trigger>
+      </ControlTemplate.Triggers>
+    </ControlTemplate>
+    <ControlTemplate x:Key="DetailSectionTemplate" TargetType="Expander">
+      <StackPanel>
+        <ToggleButton Template="{StaticResource DetailSectionHeader}" Cursor="Hand" AutomationProperties.Name="{TemplateBinding AutomationProperties.Name}"
+                      AutomationProperties.HelpText="{TemplateBinding AutomationProperties.HelpText}" Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+                      IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" />
+        <ContentPresenter x:Name="SectionBody" Visibility="Collapsed" />
+      </StackPanel>
+      <ControlTemplate.Triggers>
+        <Trigger Property="IsExpanded" Value="True">
+          <Setter TargetName="SectionBody" Property="Visibility" Value="Visible" />
+        </Trigger>
+      </ControlTemplate.Triggers>
+    </ControlTemplate>
+    <Style x:Key="DetailSection" TargetType="Expander">
+      <Setter Property="Template" Value="{StaticResource DetailSectionTemplate}" />
+      <Setter Property="AutomationProperties.Name" Value="{Binding Header, RelativeSource={RelativeSource Self}}" />
+      <Setter Property="Foreground" Value="{StaticResource Text}" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
     <Style TargetType="Window">
       <Setter Property="FontFamily" Value="Segoe UI Variable, Malgun Gothic, Segoe UI" />
       <Setter Property="FontSize" Value="13" />
@@ -158,6 +220,43 @@
     </Style>
     <Style TargetType="ScrollBar">
       <Style.Triggers>
+        <Trigger Property="Orientation" Value="Horizontal">
+          <Setter Property="Template">
+            <Setter.Value>
+              <ControlTemplate TargetType="ScrollBar">
+                <Grid Background="#171A22">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                  <Grid.Resources>
+                    <Style x:Key="ScrollStep" TargetType="RepeatButton">
+                      <Setter Property="Focusable" Value="False" />
+                      <Setter Property="Template">
+                        <Setter.Value>
+                          <ControlTemplate TargetType="RepeatButton">
+                            <Border x:Name="Surface" Background="Transparent"><ContentPresenter VerticalAlignment="Center" /></Border>
+                            <ControlTemplate.Triggers>
+                              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="{StaticResource Border}" /></Trigger>
+                            </ControlTemplate.Triggers>
+                          </ControlTemplate>
+                        </Setter.Value>
+                      </Setter>
+                    </Style>
+                  </Grid.Resources>
+                  <RepeatButton Style="{StaticResource ScrollStep}" Command="ScrollBar.LineLeftCommand" AutomationProperties.Name="왼쪽으로 스크롤">
+                    <Path Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronLeft}" />
+                  </RepeatButton>
+                  <Track x:Name="PART_Track" Grid.Column="1" Orientation="Horizontal">
+                    <Track.DecreaseRepeatButton><RepeatButton Style="{StaticResource ScrollPage}" Command="ScrollBar.PageLeftCommand" /></Track.DecreaseRepeatButton>
+                    <Track.Thumb><Thumb Style="{StaticResource ScrollThumb}" /></Track.Thumb>
+                    <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource ScrollPage}" Command="ScrollBar.PageRightCommand" /></Track.IncreaseRepeatButton>
+                  </Track>
+                  <RepeatButton Grid.Column="2" Style="{StaticResource ScrollStep}" Command="ScrollBar.LineRightCommand" AutomationProperties.Name="오른쪽으로 스크롤">
+                    <Path Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronRight}" />
+                  </RepeatButton>
+                </Grid>
+              </ControlTemplate>
+            </Setter.Value>
+          </Setter>
+        </Trigger>
         <Trigger Property="Orientation" Value="Vertical">
           <Setter Property="Width" Value="16" />
           <Setter Property="Template">

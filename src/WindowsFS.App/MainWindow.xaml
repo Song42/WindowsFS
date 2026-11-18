@@ -4,48 +4,6 @@
   </shell:WindowChrome.WindowChrome>
   <Window.Resources>
     <controls:SpaceMapVisibilityConverter x:Key="SpaceMapVisibility" />
-    <ControlTemplate x:Key="DetailSectionHeader" TargetType="ToggleButton">
-      <Border x:Name="HeaderSurface" Background="Transparent" CornerRadius="5" Padding="4,5">
-        <Grid>
-          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-          <Path x:Name="Chevron" Data="M 3,6 L 8,11 L 13,6"
-                Stroke="{StaticResource Muted}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                StrokeLineJoin="Round" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-          <ContentPresenter Grid.Column="1" VerticalAlignment="Center" TextElement.Foreground="White" />
-        </Grid>
-      </Border>
-      <ControlTemplate.Triggers>
-        <Trigger Property="IsChecked" Value="True">
-          <Setter TargetName="Chevron" Property="Data" Value="M 3,10 L 8,5 L 13,10" />
-        </Trigger>
-        <Trigger Property="IsMouseOver" Value="True">
-          <Setter TargetName="HeaderSurface" Property="Background" Value="{StaticResource Border}" />
-        </Trigger>
-        <Trigger Property="IsKeyboardFocused" Value="True">
-          <Setter TargetName="Chevron" Property="Stroke" Value="{StaticResource Accent}" />
-        </Trigger>
-      </ControlTemplate.Triggers>
-    </ControlTemplate>
-    <ControlTemplate x:Key="DetailSectionTemplate" TargetType="Expander">
-      <StackPanel>
-        <ToggleButton Template="{StaticResource DetailSectionHeader}" Cursor="Hand" AutomationProperties.Name="{TemplateBinding AutomationProperties.Name}"
-                      AutomationProperties.HelpText="{TemplateBinding AutomationProperties.HelpText}" Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
-                      IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" />
-        <ContentPresenter x:Name="SectionBody" Visibility="Collapsed" />
-      </StackPanel>
-      <ControlTemplate.Triggers>
-        <Trigger Property="IsExpanded" Value="True">
-          <Setter TargetName="SectionBody" Property="Visibility" Value="Visible" />
-        </Trigger>
-      </ControlTemplate.Triggers>
-    </ControlTemplate>
-    <Style x:Key="DetailSection" TargetType="Expander">
-      <Setter Property="Template" Value="{StaticResource DetailSectionTemplate}" />
-      <Setter Property="AutomationProperties.Name" Value="{Binding Header, RelativeSource={RelativeSource Self}}" />
-      <Setter Property="Foreground" Value="{StaticResource Text}" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="FontSize" Value="13" />
-    </Style>
   </Window.Resources>
   <Window.InputBindings>
     <KeyBinding Key="F5" Command="{Binding ScanCommand}" />
@@ -61,7 +19,12 @@
         <TextBlock Text="◈" Foreground="{StaticResource Accent}" FontSize="20" Margin="0,0,10,0" />
         <TextBlock Text="WindowsFS" FontWeight="SemiBold" VerticalAlignment="Center" />
         <Border Width="1" Height="16" Background="{StaticResource Border}" Margin="22,0,12,0" Visibility="{Binding IsDetailView, Converter={StaticResource Visible}}" />
-        <Button x:Name="DashboardBackButton" Content="← 대시보드" Command="{Binding NavigateCommand}" CommandParameter="overview" Visibility="{Binding IsDetailView, Converter={StaticResource Visible}}" Padding="10,5" Margin="0" FontSize="12" Style="{StaticResource Nav}" Foreground="{StaticResource Muted}" shell:WindowChrome.IsHitTestVisibleInChrome="True" AutomationProperties.Name="대시보드로 돌아가기" />
+        <Button x:Name="DashboardBackButton" Command="{Binding NavigateCommand}" CommandParameter="overview" Visibility="{Binding IsDetailView, Converter={StaticResource Visible}}" Padding="10,5" Margin="0" FontSize="12" Style="{StaticResource Nav}" Foreground="{StaticResource Muted}" shell:WindowChrome.IsHitTestVisibleInChrome="True" AutomationProperties.Name="대시보드로 돌아가기">
+          <StackPanel Orientation="Horizontal">
+            <Path Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronLeft}" Margin="0,0,4,0" />
+            <TextBlock Text="대시보드" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
       </StackPanel>
       <Border x:Name="MainSurface" Grid.Row="1" Background="{StaticResource Background}" />
       <Grid x:Name="MainContent" Grid.Row="1" Margin="30,22,30,18">
@@ -119,7 +82,7 @@
                   <TextBlock Text="가장 큰 파일" FontSize="15" FontWeight="SemiBold" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" HorizontalAlignment="Right" Margin="8,0,0,0">
-                  <TextBlock Text="→" Foreground="{StaticResource Accent}" FontSize="15" HorizontalAlignment="Right" />
+                  <Path Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronRight}" Stroke="{StaticResource Accent}" HorizontalAlignment="Right" />
                   <TextBlock Text="{Binding LargestFileCount}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
               </Grid>
@@ -133,7 +96,7 @@
                   <TextBlock Text="폴더별 누적 용량" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" HorizontalAlignment="Right" Margin="8,0,0,0">
-                  <TextBlock Text="→" Foreground="#82B1E7" FontSize="15" HorizontalAlignment="Right" />
+                  <Path Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronRight}" Stroke="#82B1E7" HorizontalAlignment="Right" />
                   <TextBlock Text="{Binding FolderCount}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
               </Grid>
@@ -147,14 +110,17 @@
                   <TextBlock Text="확장자별 용량 합계" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" HorizontalAlignment="Right" Margin="8,0,0,0">
-                  <TextBlock Text="→" Foreground="#70BEB1" FontSize="15" HorizontalAlignment="Right" />
+                  <Path Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronRight}" Stroke="#70BEB1" HorizontalAlignment="Right" />
                   <TextBlock Text="{Binding FileTypeCount}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
               </Grid>
             </Button>
             <Button x:Name="DashboardCleanupButton" Command="{Binding NavigateCommand}" CommandParameter="cleanup" Style="{StaticResource DashboardLink}" AutomationProperties.Name="정리 분석">
               <StackPanel>
-                <TextBlock Text="정리 분석 →" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="정리 분석" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
+                  <Path Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronRight}" Stroke="{StaticResource Accent}" Margin="4,0,0,0" />
+                </StackPanel>
                 <TextBlock Text="앱·용도별 묶음" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
               </StackPanel>
             </Button>
@@ -189,7 +155,9 @@
               <TextBlock Text="{Binding ResultScope}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ResultScope}" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,0,0,4" />
               <TextBlock Text="{Binding SnapshotDescription}" TextTrimming="CharacterEllipsis" ToolTip="{Binding SnapshotDescription}" Foreground="{StaticResource Accent}" FontSize="10" />
               <DockPanel Visibility="{Binding ShowFolderNavigation, Converter={StaticResource Visible}}" Margin="0,6,0,0">
-                <Button Content="↑" Command="{Binding UpCommand}" Padding="12,6" ToolTip="상위 폴더" />
+                <Button Command="{Binding UpCommand}" Padding="12,6" ToolTip="상위 폴더" AutomationProperties.Name="상위 폴더">
+                  <Path Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronUp}" />
+                </Button>
                 <TextBlock Text="현재 경로" FontSize="10" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="12,0,8,0" />
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" ScrollChanged="BreadcrumbScrollChanged">
                   <ItemsControl x:Name="BreadcrumbTrail" ItemsSource="{Binding BreadcrumbItems}" VerticalAlignment="Center">
@@ -202,15 +170,15 @@
                           <Button Command="{Binding DataContext.NavigateBreadcrumbCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" ToolTip="{Binding Path}" Padding="9,6" Margin="0,0,2,0" Background="Transparent" BorderThickness="0" MaxWidth="220" AutomationProperties.Name="{Binding Name}">
                             <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
                           </Button>
-                          <TextBlock Text="›" Foreground="{StaticResource Muted}" Margin="2,0,4,0" VerticalAlignment="Center">
-                            <TextBlock.Style>
-                              <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                          <Path Data="{StaticResource ChevronRight}" Margin="2,0,4,0">
+                            <Path.Style>
+                              <Style TargetType="Path" BasedOn="{StaticResource ChevronIcon}">
                                 <Style.Triggers>
                                   <DataTrigger Binding="{Binding IsCurrent}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
                                 </Style.Triggers>
                               </Style>
-                            </TextBlock.Style>
-                          </TextBlock>
+                            </Path.Style>
+                          </Path>
                         </StackPanel>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -378,7 +346,7 @@
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                       <Button Content="세부정보" Command="{Binding ShowSystemInfoCommand}" Visibility="{Binding CanShowDetails, Converter={StaticResource Visible}}" Padding="11,7" FontSize="11" Margin="0,0,8,0" />
                       <Button Content="경로 복사" Command="{Binding CopyPathCommand}" Padding="11,7" FontSize="11" Margin="0,0,8,0" />
-                      <Button Content="탐색기에서 보기 ↗" Command="{Binding RevealCommand}" Padding="11,7" FontSize="11" />
+                      <Button Content="탐색기에서 보기" ContentTemplate="{StaticResource ExternalLinkLabel}" Command="{Binding RevealCommand}" Padding="11,7" FontSize="11" />
                     </StackPanel>
                   </Border>
                 </Grid>
@@ -452,7 +420,7 @@
                         <Border Background="#252333" CornerRadius="7" Padding="10" Margin="0,18,0,0">
                           <TextBlock Text="{Binding SystemInfo.MatchBasis}" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="10" LineHeight="17" />
                         </Border>
-                        <Button Content="Microsoft 문서 ↗" Command="{Binding OpenSystemHelpCommand}" Margin="0,15,0,0" Padding="12,9" FontSize="11" />
+                        <Button Content="Microsoft 문서" ContentTemplate="{StaticResource ExternalLinkLabel}" Command="{Binding OpenSystemHelpCommand}" Margin="0,15,0,0" Padding="12,9" FontSize="11" />
                         </StackPanel>
                         </Expander>
                       </Border>
