@@ -222,7 +222,8 @@ public sealed class FileScanResultStore : IScanResultStore
                     }
                 }
                 if (rootBytes != document.TotalBytes || rootFiles != document.FileCount) throw InvalidSnapshot();
-                if (document.Answers is null || document.Answers.Any(a => a is null || !paths.Contains(a.Path)
+                if (document.Answers is null || document.Answers.Any(a => a is null || string.IsNullOrWhiteSpace(a.Path)
+                    || (a.IsFile ? !IsFileInIndexedFolder(a.Path, paths) : !paths.Contains(a.Path))
                     || string.IsNullOrWhiteSpace(a.Question) || string.IsNullOrWhiteSpace(a.Text))) throw InvalidSnapshot();
                 for (var index = 0; index < document.Folders.Length; index++)
                     if (childBytes[index] > document.Folders[index].TotalBytes || childFiles[index] > document.Folders[index].FileCount)
@@ -252,6 +253,9 @@ public sealed class FileScanResultStore : IScanResultStore
         }
         catch (OverflowException error) { throw InvalidSnapshot(error); }
     }
+
+    private static bool IsFileInIndexedFolder(string path, HashSet<string> folders) =>
+        Path.GetFileName(path) is not ("" or "." or "..") && Path.GetDirectoryName(path) is { } parent && folders.Contains(parent);
 
     private static InvalidDataException InvalidSnapshot(Exception? inner = null) =>
         new("The saved scan is invalid or uses an unsupported format.", inner);

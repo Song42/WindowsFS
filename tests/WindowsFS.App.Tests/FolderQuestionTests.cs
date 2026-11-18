@@ -33,12 +33,12 @@ internal static partial class Program
         var requests = 0;
         var vm = new MainViewModel(scanner, store, fileBrowser: new ReadOnlyFileBrowser())
         {
-            AskFolderAsync = (_, token) => { requests++; started.TrySetResult(); return reply.Task.WaitAsync(token); }
+            AskItemAsync = (_, token) => { requests++; started.TrySetResult(); return reply.Task.WaitAsync(token); }
         };
         await vm.RestoreLastScanAsync();
         vm.NavigateCommand.Execute("folders");
         vm.SelectedRow = vm.Rows.Single(row => row.Path == source);
-        var input = await vm.BuildQuestionInputAsync(vm.QuestionFolder!, FolderQuestions.DeleteQuestion, CancellationToken.None);
+        var input = await vm.BuildQuestionInputAsync(vm.SectionTarget!, FolderQuestions.DeleteQuestion, CancellationToken.None);
         using var json = JsonDocument.Parse(input);
         Equal(source, json.RootElement.GetProperty("folderPath").GetString()!);
         Equal("one.txt", json.RootElement.GetProperty("files")[0].GetProperty("name").GetString()!);
@@ -48,7 +48,7 @@ internal static partial class Program
         using var client = new HttpClient(handler);
         var answer = await FolderQuestions.SendAsync(client, "fixture-token", input, CancellationToken.None);
         Equal("fixture answer", answer);
-        var oldNode = vm.QuestionFolder!;
+        var oldNode = vm.SectionTarget!;
         Check(await vm.RememberAnswerAsync(oldNode, FolderQuestions.DeleteQuestion, answer), "Answer save failed.");
         var window = new MainWindow { DataContext = vm };
         try
@@ -110,14 +110,14 @@ internal static partial class Program
         finally { window.Close(); }
         var reopened = CreateViewModel(scanner, store);
         await reopened.RestoreLastScanAsync();
-        Equal(answer, reopened.FindFolderAnswer(source, FolderQuestions.DeleteQuestion)!.Text);
-        Equal("purpose answer", reopened.FindFolderAnswer(source, FolderQuestions.PurposeQuestion)!.Text);
+        Equal(answer, reopened.FindAnswer(source, false, FolderQuestions.DeleteQuestion)!.Text);
+        Equal("purpose answer", reopened.FindAnswer(source, false, FolderQuestions.PurposeQuestion)!.Text);
         reopened.NavigateCommand.Execute("folders");
         reopened.SelectedRow = reopened.Rows.Single(row => row.Path == source);
         Check(reopened.QuestionSections.Count == 2 && reopened.QuestionSections.All(s => !s.IsExpanded && s.RequestStatus == ""),
             "Restored answers were not identified before expansion.");
         await reopened.ScanAsync();
-        Check(reopened.FindFolderAnswer(source, FolderQuestions.DeleteQuestion) is null, "New scan retained an old answer.");
+        Check(reopened.FindAnswer(source, false, FolderQuestions.DeleteQuestion) is null, "New scan retained an old answer.");
         Check(!await reopened.RememberAnswerAsync(oldNode, FolderQuestions.DeleteQuestion, "late"), "Stale answer entered a new scan.");
         Equal(0, (await store.LoadAsync())!.Answers.Length);
         Equal(privateContent, File.ReadAllText(Path.Combine(source, "one.txt")));
@@ -133,7 +133,7 @@ internal static partial class Program
         var calls = 0;
         var vm = new MainViewModel(new StubScanner((_, _, _) => Task.FromResult(result)), store)
         {
-            AskFolderAsync = (input, _) =>
+            AskItemAsync = (input, _) =>
             {
                 calls++;
                 if (calls == 1) throw new FolderQuestionException("일시적인 요청 오류");
@@ -174,6 +174,69 @@ internal static partial class Program
         await vm.WaitForPendingPersistenceAsync();
         Equal(2, store.Saved!.Answers.Length);
         Check(store.Saved.Answers.All(a => a.Path == root.Path), "Answer saved against the wrong folder.");
+    }
+
+    private static async Task FileQuestionPrivacy()
+    {
+        using var fixture = new PickerFixture();
+        var root = Directory.CreateDirectory(Path.Combine(fixture.Root, "source")).FullName;
+        var small = Path.Combine(root, "notes.txt");
+        var large = Path.Combine(root, "other.bin");
+        const string privateText = "synthetic private preview";
+        File.WriteAllText(small, privateText);
+        File.WriteAllBytes(large, new byte[1024]);
+        var scanner = new DiskScanner(new ScanOptions { LargestFileLimit = 1 });
+        var result = await scanner.ScanAsync([root]);
+        var store = new FileScanResultStore(Path.Combine(fixture.Root, "cache", "fixture.gz"));
+        await store.SaveAsync(new SavedScan(result, root, DateTimeOffset.UtcNow));
+        var inputs = new List<string>();
+        MainViewModel Open() => new(scanner, store, fileBrowser: new ReadOnlyFileBrowser())
+        {
+            AskItemAsync = (input, _) => { inputs.Add(input); return Task.FromResult("fixture answer"); }
+        };
+        var vm = Open();
+        await vm.RestoreLastScanAsync();
+        vm.NavigateCommand.Execute("files");
+        vm.SelectedRow = vm.Rows.Single();
+        Equal(large, vm.SectionTarget!.Path);
+        Equal(2, vm.QuestionSections.Count);
+        var first = vm.QuestionSections[0];
+        first.IsExpanded = true;
+        await first.Pending;
+        await vm.WaitForPendingPersistenceAsync();
+
+        vm.NavigateCommand.Execute("folders");
+        vm.OpenRowCommand.Execute(vm.Rows.Single());
+        await vm.WaitForFolderFilesAsync();
+        vm.SelectedRow = vm.Rows.Single(row => row.Path == small);
+        vm.PreviewExpanded = true;
+        await vm.WaitForPreviewAsync();
+        Check(vm.PreviewText.Contains(privateText), "The fixture preview was not available.");
+        Equal(1, inputs.Count);
+        var second = vm.QuestionSections[1];
+        second.IsExpanded = true;
+        await second.Pending;
+        await vm.WaitForPendingPersistenceAsync();
+        Equal(2, inputs.Count);
+        foreach (var (input, path, question) in new[] { (inputs[0], large, FolderQuestions.DeleteQuestion), (inputs[1], small, FolderQuestions.PurposeQuestion) })
+        {
+            using var json = JsonDocument.Parse(input);
+            Equal(2, json.RootElement.EnumerateObject().Count());
+            Equal(path, json.RootElement.GetProperty("filePath").GetString()!);
+            Equal(question, json.RootElement.GetProperty("question").GetString()!);
+        }
+        var reopened = Open();
+        await reopened.RestoreLastScanAsync();
+        reopened.NavigateCommand.Execute("cleanup");
+        await reopened.Cleanup.WaitAsync();
+        await reopened.Cleanup.WaitForFilesAsync();
+        reopened.Cleanup.SelectedFile = reopened.Cleanup.Files.Single(file => file.Name == "notes.txt");
+        var restored = reopened.QuestionSections[1];
+        Equal("", restored.RequestStatus);
+        restored.IsExpanded = true;
+        await restored.Pending;
+        Equal("fixture answer", restored.Text);
+        Equal(2, inputs.Count);
     }
 
     private static async Task FolderQuestionCoverage()

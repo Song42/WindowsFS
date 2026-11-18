@@ -6,7 +6,11 @@ public sealed record SavedScan(ScanResult Result, string? SelectedPath, DateTime
     public FolderAnswer[] Answers { get; init; } = [];
 }
 
-public sealed record FolderAnswer(string Path, string Question, string Text);
+public sealed record FolderAnswer(string Path, string Question, string Text)
+{
+    // Existing snapshots contain folder answers only.
+    public bool IsFile { get; init; }
+}
 
 public interface IScanResultStore
 {

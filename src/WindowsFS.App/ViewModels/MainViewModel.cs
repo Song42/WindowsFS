@@ -45,6 +45,10 @@ public sealed record ResultRow(string Name, string Path, long Bytes, long Count,
 }
 
 public sealed record BreadcrumbItem(string Name, string? Path, bool IsCurrent);
+internal sealed record QuestionTarget(ScanResult Scan, string Path, FolderNode? Folder)
+{
+    public bool IsFile => Folder is null;
+}
 
 public static class DisplayFormat
 {
@@ -66,46 +70,52 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public CleanupViewModel Cleanup { get; }
     private Task? _pendingSave;
     private string? _snapshotTarget;
-    private readonly Dictionary<(string Path, string Question), FolderAnswer> _folderAnswers = [];
-    internal FolderNode? QuestionFolder => DetailRow is { IsDirectory: true } row && _folders.TryGetValue(row.Path, out var folder) ? folder : null;
-    internal Func<string, CancellationToken, Task<string>> AskFolderAsync { get; init; } = FolderQuestions.AskAsync;
+    private readonly Dictionary<(string Path, bool IsFile, string Question), FolderAnswer> _answers = [];
+    internal Func<string, CancellationToken, Task<string>> AskItemAsync { get; init; } = FolderQuestions.AskAsync;
     public IReadOnlyList<FolderQuestionSection> QuestionSections { get; private set; } = [];
-    private FolderNode? _sectionFolder;
-    private readonly Dictionary<(FolderNode, string), Task<string>> _pendingQuestions = [];
+    internal QuestionTarget? SectionTarget { get; private set; }
+    private readonly Dictionary<(QuestionTarget, string), Task<string>> _pendingQuestions = [];
     private CancellationTokenSource? _questionCancellation;
 
     private void UpdateQuestionSections()
     {
-        var folder = QuestionFolder;
-        if (ReferenceEquals(folder, _sectionFolder)) return;
-        _sectionFolder = folder;
-        QuestionSections = folder is null ? [] : [
-            new(FolderQuestions.DeleteQuestion, () => AnswerAsync(folder, FolderQuestions.DeleteQuestion)),
-            new(FolderQuestions.PurposeQuestion, () => AnswerAsync(folder, FolderQuestions.PurposeQuestion))];
+        QuestionTarget? target = null;
+        if (_result is { } scan && DetailRow is { Path.Length: > 0 } row)
+        {
+            if (row.IsDirectory && _folders.TryGetValue(row.Path, out var folder))
+                target = new(scan, row.Path, folder);
+            else if (!row.IsDirectory && Path.GetDirectoryName(row.Path) is { } parent && _folders.ContainsKey(parent))
+                target = new(scan, row.Path, null);
+        }
+        if (target == SectionTarget) return;
+        SectionTarget = target;
+        QuestionSections = target is null ? [] : [
+            new(FolderQuestions.DeleteQuestion, () => AnswerAsync(target, FolderQuestions.DeleteQuestion)),
+            new(FolderQuestions.PurposeQuestion, () => AnswerAsync(target, FolderQuestions.PurposeQuestion))];
         RefreshQuestionStatus();
         Changed(nameof(QuestionSections));
     }
 
     private void RefreshQuestionStatus()
     {
-        if (_sectionFolder is not { } folder) return;
+        if (SectionTarget is not { } target) return;
         foreach (var section in QuestionSections)
         {
-            var status = FindFolderAnswer(folder.Path, section.Question) is null && !_pendingQuestions.ContainsKey((folder, section.Question))
+            var status = FindAnswer(target.Path, target.IsFile, section.Question) is null && !_pendingQuestions.ContainsKey((target, section.Question))
                 ? "요청하기" : "";
             section.SetRequestStatus(status);
         }
     }
 
-    private async Task<string> AnswerAsync(FolderNode folder, string question)
+    private async Task<string> AnswerAsync(QuestionTarget target, string question)
     {
-        if (!ReferenceEquals(folder, QuestionFolder) || IsRestoring || IsBusy || IsDeleting)
-            throw new FolderQuestionException("선택한 분석 폴더가 변경됨");
-        if (FindFolderAnswer(folder.Path, question) is { } saved) return saved.Text;
-        var key = (folder, question);
+        if (target != SectionTarget || !ReferenceEquals(target.Scan, _result) || IsRestoring || IsBusy || IsDeleting)
+            throw new FolderQuestionException("선택한 분석 항목이 변경됨");
+        if (FindAnswer(target.Path, target.IsFile, question) is { } saved) return saved.Text;
+        var key = (target, question);
         if (_pendingQuestions.TryGetValue(key, out var pending)) return await pending;
         _questionCancellation ??= new CancellationTokenSource();
-        var request = RequestAnswerAsync(folder, question, _questionCancellation.Token);
+        var request = RequestAnswerAsync(target, question, _questionCancellation.Token);
         _pendingQuestions[key] = request;
         RefreshQuestionStatus();
         try { return await request; }
@@ -119,13 +129,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task<string> RequestAnswerAsync(FolderNode folder, string question, CancellationToken token)
+    private async Task<string> RequestAnswerAsync(QuestionTarget target, string question, CancellationToken token)
     {
-        var input = await BuildQuestionInputAsync(folder, question, token);
+        var input = await BuildQuestionInputAsync(target, question, token);
         token.ThrowIfCancellationRequested();
-        var answer = await AskFolderAsync(input, token);
+        var answer = await AskItemAsync(input, token);
         token.ThrowIfCancellationRequested();
-        _ = RememberAnswerAsync(folder, question, answer);
+        _ = RememberAnswerAsync(target, question, answer);
         return answer;
     }
 
@@ -137,11 +147,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _pendingQuestions.Clear();
         RefreshQuestionStatus();
     }
-    internal FolderAnswer? FindFolderAnswer(string path, string question) => _folderAnswers.GetValueOrDefault((path, question));
-    internal async Task<string> BuildQuestionInputAsync(FolderNode folder, string question, CancellationToken token)
+    internal FolderAnswer? FindAnswer(string path, bool isFile, string question) => _answers.GetValueOrDefault((path, isFile, question));
+    internal async Task<string> BuildQuestionInputAsync(QuestionTarget target, string question, CancellationToken token)
     {
-        if (!ReferenceEquals(folder, QuestionFolder) || _result is not { } result)
-            throw new FolderQuestionException("선택한 분석 폴더가 변경됨");
+        if (target != SectionTarget || !ReferenceEquals(target.Scan, _result))
+            throw new FolderQuestionException("선택한 분석 항목이 변경됨");
+        if (target.Folder is not { } folder) return FolderQuestions.BuildFileInput(target.Path, question);
         var scannedAt = _scannedAtUtc;
         IReadOnlyList<FileRecord>? files = null;
         var status = "미조회";
@@ -161,20 +172,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var readAt = DateTimeOffset.UtcNow;
         var context = await Cleanup.ReadContextAsync(token);
         var input = await Task.Run(() => FolderQuestions.BuildInput(folder, files, question,
-            CleanupAnalyzer.DescribeFolder(folder, context, token), scannedAt, result.IsCancelled, result.SkippedCount,
+            CleanupAnalyzer.DescribeFolder(folder, context, token), scannedAt, target.Scan.IsCancelled, target.Scan.SkippedCount,
             readAt, status), token);
-        if (!ReferenceEquals(result, _result))
+        if (!ReferenceEquals(target.Scan, _result))
             throw new FolderQuestionException("선택한 분석 폴더가 변경됨");
         return input;
     }
 
-    internal async Task<bool> RememberAnswerAsync(FolderNode folder, string question, string text)
+    internal async Task<bool> RememberAnswerAsync(QuestionTarget target, string question, string text)
     {
-        if (IsBusy || IsDeleting || IsRestoring || !_folders.TryGetValue(folder.Path, out var indexed) || !ReferenceEquals(folder, indexed)) return false;
-        _folderAnswers[(folder.Path, question)] = new(folder.Path, question, text);
+        if (IsBusy || IsDeleting || IsRestoring || !ReferenceEquals(target.Scan, _result)) return false;
+        _answers[(target.Path, target.IsFile, question)] = new(target.Path, question, text) { IsFile = target.IsFile };
         RefreshQuestionStatus();
         if (_store is null || _result is not { IsCancelled: false } || _scannedAtUtc is null) return false;
-        var snapshot = new SavedScan(_result, _snapshotTarget, _scannedAtUtc.Value) { Answers = _folderAnswers.Values.ToArray() };
+        var snapshot = new SavedScan(_result, _snapshotTarget, _scannedAtUtc.Value) { Answers = _answers.Values.ToArray() };
         IsSaving = true;
         var save = SaveAfterPreviousAsync(_pendingSave, snapshot);
         _pendingSave = save;
@@ -514,7 +525,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (saved.Result.IsCancelled) throw new InvalidDataException("Incomplete saved scan.");
             await ApplyResultAsync(saved.Result);
             _snapshotTarget = saved.SelectedPath;
-            foreach (var answer in saved.Answers) _folderAnswers[(answer.Path, answer.Question)] = answer;
+            foreach (var answer in saved.Answers) _answers[(answer.Path, answer.IsFile, answer.Question)] = answer;
             RefreshQuestionStatus();
             SelectPath(saved.SelectedPath);
             _resultScope = TargetLabel;
@@ -645,7 +656,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             await _store!.DeleteAsync();
             HasSavedAnalysis = false;
             _result = null;
-            _folderAnswers.Clear();
+            _answers.Clear();
             Cleanup.Reset();
             _folderFiles.Clear();
             _folders.Clear(); _parents.Clear(); _folderPath = null;
@@ -694,7 +705,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         // Indexing a saved tree does not touch any scanned paths or read their current metadata.
         var index = await Task.Run(() => IndexFolders(result.Roots));
         _result = result;
-        _folderAnswers.Clear();
+        _answers.Clear();
         Cleanup.Reset();
         _folderFiles.Clear();
         _folders = index.Folders; _parents = index.Parents;
