@@ -467,7 +467,15 @@
                         <ItemsControl.ItemTemplate>
                           <DataTemplate>
                             <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0">
-                              <Expander Header="{Binding Question}" IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
+                              <Expander Header="{Binding}" IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
+                                <Expander.HeaderTemplate>
+                                  <DataTemplate>
+                                    <WrapPanel>
+                                      <TextBlock Text="{Binding Question}" Margin="0,0,10,0" />
+                                      <TextBlock Text="{Binding RequestStatus}" Foreground="{StaticResource Muted}" VerticalAlignment="Center" FontSize="12" />
+                                    </WrapPanel>
+                                  </DataTemplate>
+                                </Expander.HeaderTemplate>
                                 <StackPanel Margin="0,12,0,0">
                                   <ProgressBar IsIndeterminate="{Binding IsLoading}" Visibility="{Binding IsLoading, Converter={StaticResource Visible}}" Height="3" Foreground="{StaticResource Accent}" AutomationProperties.Name="답변 요청 중" />
                                   <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />

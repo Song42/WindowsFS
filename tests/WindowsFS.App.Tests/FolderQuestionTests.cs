@@ -57,24 +57,30 @@ internal static partial class Program
             var expanders = Descendants<Expander>(sections).ToArray();
             Equal(2, expanders.Length);
             Check(expanders.All(e => !e.IsExpanded), "Folder selection opened a question.");
-            var cached = expanders.Single(e => Equals(e.Header, FolderQuestions.DeleteQuestion));
+            var cached = expanders.Single(e => ((FolderQuestionSection)e.Header).Question == FolderQuestions.DeleteQuestion);
+            var fresh = expanders.Single(e => ((FolderQuestionSection)e.Header).Question == FolderQuestions.PurposeQuestion);
+            Check(Descendants<TextBlock>(cached).Any(t => t.Text == "저장된 답변 보기"), "Collapsed header did not identify a saved answer.");
+            Check(Descendants<TextBlock>(fresh).Any(t => t.Text == "펼치면 새 요청"), "Collapsed header did not identify a new request.");
             cached.IsExpanded = true;
             Render((FrameworkElement)window.Content);
             Check(Descendants<TextBlock>(cached).Any(t => t.Text == answer), "Saved answer was not displayed.");
             Equal(0, requests);
-            var fresh = expanders.Single(e => Equals(e.Header, FolderQuestions.PurposeQuestion));
             fresh.IsExpanded = true;
             await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Render((FrameworkElement)window.Content);
             var progress = Descendants<ProgressBar>(fresh).Single();
             Check(progress.IsIndeterminate && progress.Visibility == Visibility.Visible, "Missing loading animation.");
             fresh.IsExpanded = false;
+            Render((FrameworkElement)window.Content);
+            Check(Descendants<TextBlock>(fresh).Any(t => t.Text == "답변 요청 중"), "Collapsed header lost its pending state.");
             fresh.IsExpanded = true;
+            fresh.IsExpanded = false;
             var section = (FolderQuestionSection)fresh.DataContext;
             reply.SetResult("purpose answer");
             await section.Pending;
             await vm.WaitForPendingPersistenceAsync();
-            fresh.IsExpanded = false;
+            Render((FrameworkElement)window.Content);
+            Check(!fresh.IsExpanded && Descendants<TextBlock>(fresh).Any(t => t.Text == "저장된 답변 보기"), "A reply did not update the collapsed header.");
             fresh.IsExpanded = true;
             Render((FrameworkElement)window.Content);
             Equal(Visibility.Collapsed, progress.Visibility);
@@ -86,6 +92,10 @@ internal static partial class Program
         await reopened.RestoreLastScanAsync();
         Equal(answer, reopened.FindFolderAnswer(source, FolderQuestions.DeleteQuestion)!.Text);
         Equal("purpose answer", reopened.FindFolderAnswer(source, FolderQuestions.PurposeQuestion)!.Text);
+        reopened.NavigateCommand.Execute("folders");
+        reopened.SelectedRow = reopened.Rows.Single(row => row.Path == source);
+        Check(reopened.QuestionSections.Count == 2 && reopened.QuestionSections.All(s => !s.IsExpanded && s.RequestStatus == "저장된 답변 보기"),
+            "Restored answers were not identified before expansion.");
         await reopened.ScanAsync();
         Check(reopened.FindFolderAnswer(source, FolderQuestions.DeleteQuestion) is null, "New scan retained an old answer.");
         Check(!await reopened.RememberAnswerAsync(oldNode, FolderQuestions.DeleteQuestion, "late"), "Stale answer entered a new scan.");
@@ -119,6 +129,7 @@ internal static partial class Program
         first.IsExpanded = true;
         await first.Pending;
         Equal("일시적인 요청 오류", first.Text);
+        Equal("펼치면 새 요청", first.RequestStatus);
         first.IsExpanded = false;
         first.IsExpanded = true;
         var second = vm.QuestionSections[1];
@@ -128,6 +139,7 @@ internal static partial class Program
         Check(vm.QuestionSections.All(s => !s.IsExpanded && s.Text.Length == 0), "Selection inherited another folder's requests.");
         vm.SelectedRow = vm.DisplayRows.Single(row => row.Navigation == FolderNavigationKind.Current);
         var revisited = vm.QuestionSections[0];
+        Equal("답변 요청 중", revisited.RequestStatus);
         revisited.IsExpanded = true;
         replies[0].SetResult("answer one");
         await first.Pending;
@@ -135,6 +147,7 @@ internal static partial class Program
         Equal("answer one", revisited.Text);
         replies[1].SetResult("answer two");
         await second.Pending;
+        Equal("저장된 답변 보기", vm.QuestionSections[1].RequestStatus);
         Equal(3, calls);
         Equal(1, store.SaveCalls);
         saveGate.SetResult();

@@ -82,7 +82,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
         QuestionSections = folder is null ? [] : [
             new(FolderQuestions.DeleteQuestion, () => AnswerAsync(folder, FolderQuestions.DeleteQuestion)),
             new(FolderQuestions.PurposeQuestion, () => AnswerAsync(folder, FolderQuestions.PurposeQuestion))];
+        RefreshQuestionStatus();
         Changed(nameof(QuestionSections));
+    }
+
+    private void RefreshQuestionStatus()
+    {
+        if (_sectionFolder is not { } folder) return;
+        foreach (var section in QuestionSections)
+        {
+            var status = FindFolderAnswer(folder.Path, section.Question) is not null ? "저장된 답변 보기"
+                : _pendingQuestions.ContainsKey((folder, section.Question)) ? "답변 요청 중" : "펼치면 새 요청";
+            section.SetRequestStatus(status);
+        }
     }
 
     private async Task<string> AnswerAsync(FolderNode folder, string question)
@@ -95,10 +107,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _questionCancellation ??= new CancellationTokenSource();
         var request = RequestAnswerAsync(folder, question, _questionCancellation.Token);
         _pendingQuestions[key] = request;
+        RefreshQuestionStatus();
         try { return await request; }
         finally
         {
-            if (ReferenceEquals(_pendingQuestions.GetValueOrDefault(key), request)) _pendingQuestions.Remove(key);
+            if (ReferenceEquals(_pendingQuestions.GetValueOrDefault(key), request))
+            {
+                _pendingQuestions.Remove(key);
+                RefreshQuestionStatus();
+            }
         }
     }
 
@@ -118,6 +135,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _questionCancellation?.Dispose();
         _questionCancellation = null;
         _pendingQuestions.Clear();
+        RefreshQuestionStatus();
     }
     internal FolderAnswer? FindFolderAnswer(string path, string question) => _folderAnswers.GetValueOrDefault((path, question));
     internal async Task<string> BuildQuestionInputAsync(FolderNode folder, string question, CancellationToken token)
@@ -154,6 +172,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (IsBusy || IsDeleting || IsRestoring || !_folders.TryGetValue(folder.Path, out var indexed) || !ReferenceEquals(folder, indexed)) return false;
         _folderAnswers[(folder.Path, question)] = new(folder.Path, question, text);
+        RefreshQuestionStatus();
         if (_store is null || _result is not { IsCancelled: false } || _scannedAtUtc is null) return false;
         var snapshot = new SavedScan(_result, _snapshotTarget, _scannedAtUtc.Value) { Answers = _folderAnswers.Values.ToArray() };
         IsSaving = true;
@@ -496,6 +515,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             await ApplyResultAsync(saved.Result);
             _snapshotTarget = saved.SelectedPath;
             foreach (var answer in saved.Answers) _folderAnswers[(answer.Path, answer.Question)] = answer;
+            RefreshQuestionStatus();
             SelectPath(saved.SelectedPath);
             _resultScope = TargetLabel;
             _scannedAtUtc = saved.ScannedAtUtc;

@@ -19,6 +19,14 @@ public sealed class FolderQuestionSection : INotifyPropertyChanged
     }
 
     public string Question { get; }
+    public string RequestStatus { get; private set; } = "";
+    internal void SetRequestStatus(string status)
+    {
+        if (RequestStatus == status) return;
+        RequestStatus = status;
+        Changed(nameof(RequestStatus));
+    }
+
     public string Text { get; private set; } = "";
     public bool IsLoading { get; private set; }
     public bool IsExpanded
