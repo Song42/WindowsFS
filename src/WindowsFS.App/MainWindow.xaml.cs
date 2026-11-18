@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -46,7 +47,15 @@ public partial class MainWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        _windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+        var handle = new WindowInteropHelper(this).Handle;
+        if (!SystemParameters.HighContrast)
+        {
+            const int immersiveDarkMode = 20, captionColor = 35;
+            int enabled = 1, titleColor = 0x181210; // COLORREF for the existing #101218 title bar.
+            DwmSetWindowAttribute(handle, immersiveDarkMode, ref enabled, sizeof(int));
+            DwmSetWindowAttribute(handle, captionColor, ref titleColor, sizeof(int));
+        }
+        _windowSource = HwndSource.FromHwnd(handle);
         _windowSource?.AddHook(WindowMessage);
     }
 
@@ -83,9 +92,9 @@ public partial class MainWindow : Window
         _closeAfterPersistence = true;
         Close();
     }
-    private void MinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-    private void MaximizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-    private void CloseClick(object sender, RoutedEventArgs e) => Close();
+    [DllImport("dwmapi.dll", ExactSpelling = true)]
+    private static extern int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
+
     private void BreadcrumbScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         if (e.ExtentWidthChange != 0 && sender is ScrollViewer scroll) scroll.ScrollToRightEnd();

@@ -143,8 +143,12 @@ internal static partial class Program
         var window = new MainWindow { DataContext = vm };
         try
         {
-            AssertColor(window.Background, Color.FromRgb(0x11, 0x13, 0x19),
-                "The application window did not inherit the dark surface style.");
+            AssertColor(((Border)window.FindName("MainSurface")).Background, Color.FromRgb(0x11, 0x13, 0x19),
+                "The main content lost its dark surface.");
+            var chrome = System.Windows.Shell.WindowChrome.GetWindowChrome(window);
+            Check(window.WindowStyle == WindowStyle.SingleBorderWindow && window.ResizeMode == ResizeMode.CanResize &&
+                chrome.UseAeroCaptionButtons && chrome.GlassFrameThickness.Top >= chrome.CaptionHeight,
+                "The system caption buttons are not enabled in the title bar.");
             AssertColor(window.Foreground, Color.FromRgb(0xF0, 0xF1, 0xF5),
                 "The application window did not inherit the light foreground style.");
             var content = (FrameworkElement)window.Content;
@@ -1342,6 +1346,7 @@ internal static partial class Program
 
         Equal(1, store.SaveCalls);
         Check(store.Saved is not null, "A completed scan was not saved.");
+        Check(!vm.ShowStatus, "A successful save left a completion message in the footer.");
         Check(vm.HasSavedAnalysis && vm.DeleteSavedAnalysisCommand.CanExecute(null),
             "A newly saved snapshot was not available for deletion.");
         var saved = store.Saved!;

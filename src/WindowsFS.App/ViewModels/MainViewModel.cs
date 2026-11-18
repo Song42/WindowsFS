@@ -690,7 +690,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             await _store!.SaveAsync(snapshot);
             _snapshotSaved = true;
             HasSavedAnalysis = true;
-            Status = "분석 완료 · 저장됨";
+            Status = "";
             return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.SecurityException)
