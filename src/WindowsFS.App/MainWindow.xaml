@@ -463,7 +463,20 @@
                         </StackPanel>
                         </Expander>
                       </Border>
-                      <Button Content="질문하기" Click="AskFolderClick" Visibility="{Binding HasQuestionFolder, Converter={StaticResource Visible}}" IsEnabled="{Binding IsIdle}" HorizontalAlignment="Left" Margin="0,12,0,0" />
+                      <ItemsControl x:Name="FolderQuestionSections" ItemsSource="{Binding QuestionSections}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0">
+                              <Expander Header="{Binding Question}" IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
+                                <StackPanel Margin="0,12,0,0">
+                                  <ProgressBar IsIndeterminate="{Binding IsLoading}" Visibility="{Binding IsLoading, Converter={StaticResource Visible}}" Height="3" Foreground="{StaticResource Accent}" AutomationProperties.Name="답변 요청 중" />
+                                  <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                                </StackPanel>
+                              </Expander>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
                     </StackPanel>
                   </ScrollViewer>
                 </Grid>

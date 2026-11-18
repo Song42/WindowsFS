@@ -50,12 +50,6 @@ public partial class MainWindow : Window
         _windowSource?.AddHook(WindowMessage);
     }
 
-    private void AskFolderClick(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is MainViewModel { IsIdle: true, QuestionFolder: { } folder } vm)
-            new FolderQuestionWindow(vm, folder) { Owner = this }.ShowDialog();
-    }
-
     private nint WindowMessage(nint window, int message, nint wParam, nint lParam, ref bool handled)
     {
         if (message == WindowSizing.GetMinMaxInfoMessage)

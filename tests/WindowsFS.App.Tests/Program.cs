@@ -70,6 +70,7 @@ internal static partial class Program
             ("Drive-root charts retain free space, preserve bytes and restore subfolder proportions", RootFreeSpaceCharts),
             ("Folder questions send bounded metadata with Sol medium and restore answers with their scan", FolderQuestionsRoundTrip),
             ("Folder questions partition purposes and disclose missing samples within token budgets", FolderQuestionCoverage),
+            ("Inline folder questions retain parallel answers across selection and retry failures", ConcurrentFolderQuestions),
             ("Breadcrumb navigation preserves exact indexed ancestors without scanning", BreadcrumbNavigation),
             ("Actual breadcrumb buttons navigate the saved folder tree", BreadcrumbXaml),
             ("Folder browsing reads metadata without changing the source tree", ReadOnlyFolderBrowsing),

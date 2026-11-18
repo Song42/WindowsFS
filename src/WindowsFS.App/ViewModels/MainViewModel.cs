@@ -68,7 +68,57 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string? _snapshotTarget;
     private readonly Dictionary<(string Path, string Question), FolderAnswer> _folderAnswers = [];
     internal FolderNode? QuestionFolder => DetailRow is { IsDirectory: true } row && _folders.TryGetValue(row.Path, out var folder) ? folder : null;
-    public bool HasQuestionFolder => QuestionFolder is not null;
+    internal Func<string, CancellationToken, Task<string>> AskFolderAsync { get; init; } = FolderQuestions.AskAsync;
+    public IReadOnlyList<FolderQuestionSection> QuestionSections { get; private set; } = [];
+    private FolderNode? _sectionFolder;
+    private readonly Dictionary<(FolderNode, string), Task<string>> _pendingQuestions = [];
+    private CancellationTokenSource? _questionCancellation;
+
+    private void UpdateQuestionSections()
+    {
+        var folder = QuestionFolder;
+        if (ReferenceEquals(folder, _sectionFolder)) return;
+        _sectionFolder = folder;
+        QuestionSections = folder is null ? [] : [
+            new(FolderQuestions.DeleteQuestion, () => AnswerAsync(folder, FolderQuestions.DeleteQuestion)),
+            new(FolderQuestions.PurposeQuestion, () => AnswerAsync(folder, FolderQuestions.PurposeQuestion))];
+        Changed(nameof(QuestionSections));
+    }
+
+    private async Task<string> AnswerAsync(FolderNode folder, string question)
+    {
+        if (!ReferenceEquals(folder, QuestionFolder) || IsRestoring || IsBusy || IsDeleting)
+            throw new FolderQuestionException("선택한 분석 폴더가 변경됨");
+        if (FindFolderAnswer(folder.Path, question) is { } saved) return saved.Text;
+        var key = (folder, question);
+        if (_pendingQuestions.TryGetValue(key, out var pending)) return await pending;
+        _questionCancellation ??= new CancellationTokenSource();
+        var request = RequestAnswerAsync(folder, question, _questionCancellation.Token);
+        _pendingQuestions[key] = request;
+        try { return await request; }
+        finally
+        {
+            if (ReferenceEquals(_pendingQuestions.GetValueOrDefault(key), request)) _pendingQuestions.Remove(key);
+        }
+    }
+
+    private async Task<string> RequestAnswerAsync(FolderNode folder, string question, CancellationToken token)
+    {
+        var input = await BuildQuestionInputAsync(folder, question, token);
+        token.ThrowIfCancellationRequested();
+        var answer = await AskFolderAsync(input, token);
+        token.ThrowIfCancellationRequested();
+        _ = RememberAnswerAsync(folder, question, answer);
+        return answer;
+    }
+
+    private void CancelQuestions()
+    {
+        _questionCancellation?.Cancel();
+        _questionCancellation?.Dispose();
+        _questionCancellation = null;
+        _pendingQuestions.Clear();
+    }
     internal FolderAnswer? FindFolderAnswer(string path, string question) => _folderAnswers.GetValueOrDefault((path, question));
     internal async Task<string> BuildQuestionInputAsync(FolderNode folder, string question, CancellationToken token)
     {
@@ -95,25 +145,34 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var input = await Task.Run(() => FolderQuestions.BuildInput(folder, files, question,
             CleanupAnalyzer.DescribeFolder(folder, context, token), scannedAt, result.IsCancelled, result.SkippedCount,
             readAt, status), token);
-        if (!ReferenceEquals(result, _result) || !ReferenceEquals(folder, QuestionFolder))
+        if (!ReferenceEquals(result, _result))
             throw new FolderQuestionException("선택한 분석 폴더가 변경됨");
         return input;
     }
 
     internal async Task<bool> RememberAnswerAsync(FolderNode folder, string question, string text)
     {
-        if (!IsIdle || !_folders.TryGetValue(folder.Path, out var indexed) || !ReferenceEquals(folder, indexed)) return false;
+        if (IsBusy || IsDeleting || IsRestoring || !_folders.TryGetValue(folder.Path, out var indexed) || !ReferenceEquals(folder, indexed)) return false;
         _folderAnswers[(folder.Path, question)] = new(folder.Path, question, text);
         if (_store is null || _result is not { IsCancelled: false } || _scannedAtUtc is null) return false;
         var snapshot = new SavedScan(_result, _snapshotTarget, _scannedAtUtc.Value) { Answers = _folderAnswers.Values.ToArray() };
         IsSaving = true;
+        var save = SaveAfterPreviousAsync(_pendingSave, snapshot);
+        _pendingSave = save;
         try
         {
-            var save = SaveSnapshotAsync(snapshot);
-            _pendingSave = save;
             return await save;
         }
-        finally { _pendingSave = null; IsSaving = false; }
+        finally
+        {
+            if (ReferenceEquals(save, _pendingSave)) { _pendingSave = null; IsSaving = false; }
+        }
+    }
+
+    private async Task<bool> SaveAfterPreviousAsync(Task? previous, SavedScan snapshot)
+    {
+        if (previous is not null) await previous;
+        return await SaveSnapshotAsync(snapshot);
     }
     private Task? _pendingDeletion;
     private CancellationTokenSource? _scanCancellation;
@@ -422,6 +481,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (_store is null || !IsIdle) return;
         IsRestoring = true;
+        CancelQuestions();
         Status = "저장된 분석 로딩 중";
         try
         {
@@ -465,6 +525,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (roots.Length == 0) { Status = "분석 가능한 드라이브 없음"; return; }
         using var cancellation = new CancellationTokenSource();
         _scanCancellation = cancellation;
+        CancelQuestions();
         IsBusy = true;
         _result = null;
         _fileListCancellation?.Cancel();
@@ -540,7 +601,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    public void Cancel() { _scanCancellation?.Cancel(); _fileListCancellation?.Cancel(); _detailsCancellation?.Cancel(); _diskSpaceCancellation?.Cancel(); Cleanup.Cancel(); }
+    public void Cancel() { CancelQuestions(); _scanCancellation?.Cancel(); _fileListCancellation?.Cancel(); _detailsCancellation?.Cancel(); _diskSpaceCancellation?.Cancel(); Cleanup.Cancel(); }
 
     public Task WaitForPendingSaveAsync() => _pendingSave ?? Task.CompletedTask;
 
@@ -551,6 +612,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (_store is null || !IsIdle || !HasSavedAnalysis) return Task.CompletedTask;
         IsDeleting = true;
+        CancelQuestions();
         Status = "저장된 분석 삭제 중";
         _pendingDeletion = DeleteSnapshotAsync();
         return _pendingDeletion;
@@ -753,7 +815,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void NotifySystemInfo()
     {
-        Changed(nameof(HasQuestionFolder));
+        UpdateQuestionSections();
         Changed(nameof(SystemInfo)); Changed(nameof(CanShowSystemInfo));
         Changed(nameof(HasSystemInfo)); Changed(nameof(IsMapVisible));
         Changed(nameof(HasDetails)); Changed(nameof(HasDetailPanel)); Changed(nameof(CanPreview));

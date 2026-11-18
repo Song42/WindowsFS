@@ -4,7 +4,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
-using WindowsFS.App.Controls;
+using System.Windows.Controls;
 using WindowsFS.App.Services;
 using WindowsFS.App.ViewModels;
 using WindowsFS.Core;
@@ -27,7 +27,13 @@ internal static partial class Program
         var store = new FileScanResultStore(Path.Combine(fixture.Root, "cache", "latest.scan.json.gz"));
         await store.SaveAsync(new SavedScan(result, source, DateTimeOffset.UtcNow));
         var scanner = new StubScanner((_, _, _) => Task.FromResult(result));
-        var vm = new MainViewModel(scanner, store, fileBrowser: new ReadOnlyFileBrowser());
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reply = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requests = 0;
+        var vm = new MainViewModel(scanner, store, fileBrowser: new ReadOnlyFileBrowser())
+        {
+            AskFolderAsync = (_, token) => { requests++; started.TrySetResult(); return reply.Task.WaitAsync(token); }
+        };
         await vm.RestoreLastScanAsync();
         vm.NavigateCommand.Execute("folders");
         vm.SelectedRow = vm.Rows.Single(row => row.Path == source);
@@ -41,33 +47,100 @@ internal static partial class Program
         using var client = new HttpClient(handler);
         var answer = await FolderQuestions.SendAsync(client, "fixture-token", input, CancellationToken.None);
         Equal("fixture answer", answer);
-        Check(vm.HasQuestionFolder, "Indexed selection did not expose folder questions.");
         var oldNode = vm.QuestionFolder!;
         Check(await vm.RememberAnswerAsync(oldNode, FolderQuestions.DeleteQuestion, answer), "Answer save failed.");
-        var dialog = new FolderQuestionWindow(vm, oldNode);
+        var window = new MainWindow { DataContext = vm };
         try
         {
-            dialog.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
-            Equal(answer, dialog.Body.Text);
-            Equal(Visibility.Visible, dialog.AnswerPanel.Visibility);
-            Equal(Visibility.Collapsed, dialog.Send.Visibility);
-            dialog.PurposeChoice.IsChecked = true;
-            // Unshown test windows have IsLoaded=false; run the same initial-view update.
-            dialog.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
-            Equal("", dialog.Body.Text);
-            Equal(Visibility.Collapsed, dialog.AnswerPanel.Visibility);
-            Check(dialog.Send.IsEnabled, "An unanswered question cannot be sent.");
+            Render((FrameworkElement)window.Content);
+            var sections = (ItemsControl)window.FindName("FolderQuestionSections");
+            var expanders = Descendants<Expander>(sections).ToArray();
+            Equal(2, expanders.Length);
+            Check(expanders.All(e => !e.IsExpanded), "Folder selection opened a question.");
+            var cached = expanders.Single(e => Equals(e.Header, FolderQuestions.DeleteQuestion));
+            cached.IsExpanded = true;
+            Render((FrameworkElement)window.Content);
+            Check(Descendants<TextBlock>(cached).Any(t => t.Text == answer), "Saved answer was not displayed.");
+            Equal(0, requests);
+            var fresh = expanders.Single(e => Equals(e.Header, FolderQuestions.PurposeQuestion));
+            fresh.IsExpanded = true;
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Render((FrameworkElement)window.Content);
+            var progress = Descendants<ProgressBar>(fresh).Single();
+            Check(progress.IsIndeterminate && progress.Visibility == Visibility.Visible, "Missing loading animation.");
+            fresh.IsExpanded = false;
+            fresh.IsExpanded = true;
+            var section = (FolderQuestionSection)fresh.DataContext;
+            reply.SetResult("purpose answer");
+            await section.Pending;
+            await vm.WaitForPendingPersistenceAsync();
+            fresh.IsExpanded = false;
+            fresh.IsExpanded = true;
+            Render((FrameworkElement)window.Content);
+            Equal(Visibility.Collapsed, progress.Visibility);
+            Check(Descendants<TextBlock>(fresh).Any(t => t.Text == "purpose answer"), "Missing inline answer.");
+            Equal(1, requests);
         }
-        finally { dialog.Close(); }
+        finally { window.Close(); }
         var reopened = CreateViewModel(scanner, store);
         await reopened.RestoreLastScanAsync();
         Equal(answer, reopened.FindFolderAnswer(source, FolderQuestions.DeleteQuestion)!.Text);
-        Check(reopened.FindFolderAnswer(source, FolderQuestions.PurposeQuestion) is null, "Different questions shared an answer.");
+        Equal("purpose answer", reopened.FindFolderAnswer(source, FolderQuestions.PurposeQuestion)!.Text);
         await reopened.ScanAsync();
         Check(reopened.FindFolderAnswer(source, FolderQuestions.DeleteQuestion) is null, "New scan retained an old answer.");
         Check(!await reopened.RememberAnswerAsync(oldNode, FolderQuestions.DeleteQuestion, "late"), "Stale answer entered a new scan.");
         Equal(0, (await store.LoadAsync())!.Answers.Length);
         Equal(privateContent, File.ReadAllText(Path.Combine(source, "one.txt")));
+    }
+
+    private static async Task ConcurrentFolderQuestions()
+    {
+        var result = FixtureResult();
+        var root = result.Roots.Single();
+        var saveGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var replies = new[] { new TaskCompletionSource<string>(), new TaskCompletionSource<string>() };
+        var store = new StubStore(new SavedScan(result, root.Path, DateTimeOffset.UtcNow)) { OnSave = (_, _) => saveGate.Task };
+        var calls = 0;
+        var vm = new MainViewModel(new StubScanner((_, _, _) => Task.FromResult(result)), store)
+        {
+            AskFolderAsync = (input, _) =>
+            {
+                calls++;
+                if (calls == 1) throw new FolderQuestionException("일시적인 요청 오류");
+                using var json = JsonDocument.Parse(input);
+                return replies[json.RootElement.GetProperty("question").GetString() == FolderQuestions.DeleteQuestion ? 0 : 1].Task;
+            }
+        };
+        await vm.RestoreLastScanAsync();
+        vm.NavigateCommand.Execute("folders");
+        var rootRow = vm.Rows.Single();
+        vm.SelectedRow = rootRow;
+        var first = vm.QuestionSections[0];
+        first.IsExpanded = true;
+        await first.Pending;
+        Equal("일시적인 요청 오류", first.Text);
+        first.IsExpanded = false;
+        first.IsExpanded = true;
+        var second = vm.QuestionSections[1];
+        second.IsExpanded = true;
+        vm.OpenRowCommand.Execute(rootRow);
+        vm.SelectedRow = vm.Rows.First();
+        Check(vm.QuestionSections.All(s => !s.IsExpanded && s.Text.Length == 0), "Selection inherited another folder's requests.");
+        vm.SelectedRow = vm.DisplayRows.Single(row => row.Navigation == FolderNavigationKind.Current);
+        var revisited = vm.QuestionSections[0];
+        revisited.IsExpanded = true;
+        replies[0].SetResult("answer one");
+        await first.Pending;
+        await revisited.Pending;
+        Equal("answer one", revisited.Text);
+        replies[1].SetResult("answer two");
+        await second.Pending;
+        Equal(3, calls);
+        Equal(1, store.SaveCalls);
+        saveGate.SetResult();
+        await vm.WaitForPendingPersistenceAsync();
+        Equal(2, store.Saved!.Answers.Length);
+        Check(store.Saved.Answers.All(a => a.Path == root.Path), "Answer saved against the wrong folder.");
     }
 
     private static async Task FolderQuestionCoverage()
