@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using WindowsFS.App.Services;
 using WindowsFS.App.ViewModels;
 using WindowsFS.Core;
@@ -59,17 +60,23 @@ internal static partial class Program
             Check(expanders.All(e => !e.IsExpanded), "Folder selection opened a question.");
             var cached = expanders.Single(e => ((FolderQuestionSection)e.Header).Question == FolderQuestions.DeleteQuestion);
             var fresh = expanders.Single(e => ((FolderQuestionSection)e.Header).Question == FolderQuestions.PurposeQuestion);
-            Check(Descendants<TextBlock>(cached).Any(t => t.Text == "저장된 답변 보기"), "Collapsed header did not identify a saved answer.");
-            Check(Descendants<TextBlock>(fresh).Any(t => t.Text == "펼치면 새 요청"), "Collapsed header did not identify a new request.");
-            cached.IsExpanded = true;
+            var cachedHeader = Descendants<ToggleButton>(cached).Single();
+            var arrow = Descendants<System.Windows.Shapes.Path>(cachedHeader).Single();
+            var down = arrow.Data.ToString();
+            Check(Descendants<TextBlock>(cachedHeader).Where(t => t.Text.Length > 0).Select(t => t.Text)
+                .SequenceEqual([FolderQuestions.DeleteQuestion]), "A cached question should only show its title.");
+            Check(Descendants<TextBlock>(fresh).Any(t => t.Text == "요청하기"), "Missing new request label.");
+            cachedHeader.SetCurrentValue(ToggleButton.IsCheckedProperty, true);
             Render((FrameworkElement)window.Content);
+            Check(cached.IsExpanded && arrow.Data.ToString() != down, "Header did not expand and switch to its up arrow.");
             Check(Descendants<TextBlock>(cached).Any(t => t.Text == answer), "Saved answer was not displayed.");
             Equal(0, requests);
             fresh.IsExpanded = true;
             await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Render((FrameworkElement)window.Content);
-            var progress = Descendants<ProgressBar>(fresh).Single();
-            Check(progress.IsIndeterminate && progress.Visibility == Visibility.Visible, "Missing loading animation.");
+            var skeleton = Descendants<Grid>(fresh).Single(grid => grid.Name == "AnswerSkeleton");
+            Check(skeleton.Visibility == Visibility.Visible && skeleton.Children.OfType<Border>().Count() == 3,
+                "Missing multiline answer skeleton.");
             fresh.IsExpanded = false;
             Render((FrameworkElement)window.Content);
             Check(Descendants<TextBlock>(fresh).Any(t => t.Text == "답변 요청 중"), "Collapsed header lost its pending state.");
@@ -80,10 +87,12 @@ internal static partial class Program
             await section.Pending;
             await vm.WaitForPendingPersistenceAsync();
             Render((FrameworkElement)window.Content);
-            Check(!fresh.IsExpanded && Descendants<TextBlock>(fresh).Any(t => t.Text == "저장된 답변 보기"), "A reply did not update the collapsed header.");
+            Equal("", section.RequestStatus);
+            Check(!fresh.IsExpanded && Descendants<TextBlock>(Descendants<ToggleButton>(fresh).Single())
+                .Where(t => t.Text.Length > 0).Select(t => t.Text).SequenceEqual([FolderQuestions.PurposeQuestion]), "A reply did not clear the header status.");
             fresh.IsExpanded = true;
             Render((FrameworkElement)window.Content);
-            Equal(Visibility.Collapsed, progress.Visibility);
+            Equal(Visibility.Collapsed, skeleton.Visibility);
             Check(Descendants<TextBlock>(fresh).Any(t => t.Text == "purpose answer"), "Missing inline answer.");
             Equal(1, requests);
         }
@@ -94,7 +103,7 @@ internal static partial class Program
         Equal("purpose answer", reopened.FindFolderAnswer(source, FolderQuestions.PurposeQuestion)!.Text);
         reopened.NavigateCommand.Execute("folders");
         reopened.SelectedRow = reopened.Rows.Single(row => row.Path == source);
-        Check(reopened.QuestionSections.Count == 2 && reopened.QuestionSections.All(s => !s.IsExpanded && s.RequestStatus == "저장된 답변 보기"),
+        Check(reopened.QuestionSections.Count == 2 && reopened.QuestionSections.All(s => !s.IsExpanded && s.RequestStatus == ""),
             "Restored answers were not identified before expansion.");
         await reopened.ScanAsync();
         Check(reopened.FindFolderAnswer(source, FolderQuestions.DeleteQuestion) is null, "New scan retained an old answer.");
@@ -129,7 +138,7 @@ internal static partial class Program
         first.IsExpanded = true;
         await first.Pending;
         Equal("일시적인 요청 오류", first.Text);
-        Equal("펼치면 새 요청", first.RequestStatus);
+        Equal("요청하기", first.RequestStatus);
         first.IsExpanded = false;
         first.IsExpanded = true;
         var second = vm.QuestionSections[1];
@@ -147,7 +156,7 @@ internal static partial class Program
         Equal("answer one", revisited.Text);
         replies[1].SetResult("answer two");
         await second.Pending;
-        Equal("저장된 답변 보기", vm.QuestionSections[1].RequestStatus);
+        Equal("", vm.QuestionSections[1].RequestStatus);
         Equal(3, calls);
         Equal(1, store.SaveCalls);
         saveGate.SetResult();

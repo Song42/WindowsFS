@@ -91,8 +91,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (_sectionFolder is not { } folder) return;
         foreach (var section in QuestionSections)
         {
-            var status = FindFolderAnswer(folder.Path, section.Question) is not null ? "저장된 답변 보기"
-                : _pendingQuestions.ContainsKey((folder, section.Question)) ? "답변 요청 중" : "펼치면 새 요청";
+            var status = FindFolderAnswer(folder.Path, section.Question) is not null ? ""
+                : _pendingQuestions.ContainsKey((folder, section.Question)) ? "답변 요청 중" : "요청하기";
             section.SetRequestStatus(status);
         }
     }
