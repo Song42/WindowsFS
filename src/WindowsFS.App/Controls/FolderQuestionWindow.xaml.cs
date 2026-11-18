@@ -14,8 +14,6 @@ public partial class FolderQuestionWindow : Window
     private readonly FolderNode _folder;
     private readonly CancellationTokenSource _lifetime = new();
     private IReadOnlyList<FileRecord>? _files;
-    private string? _input;
-    private bool _reading;
     private bool _ready;
     private bool _sending;
     private string Question => DeleteChoice.IsChecked == true ? FolderQuestions.DeleteQuestion : FolderQuestions.PurposeQuestion;
@@ -34,41 +32,19 @@ public partial class FolderQuestionWindow : Window
     private void OnChoice(object sender, RoutedEventArgs e) { if (IsLoaded) UpdateQuestion(); }
     private void OnClosed(object? sender, EventArgs e) { _lifetime.Cancel(); _lifetime.Dispose(); }
 
-    private async void UpdateQuestion()
+    private void UpdateQuestion()
     {
-        _input = null;
-        Send.IsEnabled = false;
-        Status.Text = "";
-        if (_vm.FindFolderAnswer(_folder.Path, Question) is { } cached)
-        {
-            SectionTitle.Text = "이 분석의 답변";
-            Body.Text = cached.Text;
-            return;
-        }
-        SectionTitle.Text = "OpenAI 전송 내용 · 바로 아래 파일과 폴더 각각 최대 60개";
-        if (!_ready)
-        {
-            Body.Text = "파일 목록 조회 중";
-            if (_reading) return;
-            _reading = true;
-            using var budget = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-            budget.CancelAfter(TimeSpan.FromSeconds(8));
-            try { _files = await _vm.QuestionFilesAsync(_folder, budget.Token); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or ArgumentException or System.Security.SecurityException)
-            { _files = null; }
-            _ready = true;
-            if (!_lifetime.IsCancellationRequested) UpdateQuestion();
-            return;
-        }
-        _input = FolderQuestions.BuildInput(_folder, _files, Question);
-        Body.Text = _input;
-        if (_files is null) Status.Text = "현재 파일 목록 조회 불가";
-        Send.IsEnabled = true;
+        var answer = _vm.FindFolderAnswer(_folder.Path, Question);
+        Body.Text = answer?.Text ?? "";
+        AnswerPanel.Visibility = answer is null ? Visibility.Collapsed : Visibility.Visible;
+        Send.Visibility = answer is null ? Visibility.Visible : Visibility.Collapsed;
+        Send.IsEnabled = answer is null;
+        Status.Text = answer is null ? "" : "이 분석의 답변";
     }
 
     private async void OnSend(object sender, RoutedEventArgs e)
     {
-        if (_input is not { } input || _sending) return;
+        if (_sending || _vm.FindFolderAnswer(_folder.Path, Question) is not null) return;
         _sending = true;
         var question = Question;
         var token = _lifetime.Token;
@@ -76,11 +52,22 @@ public partial class FolderQuestionWindow : Window
         Status.Text = "답변 요청 중";
         try
         {
+            if (!_ready)
+            {
+                using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
+                budget.CancelAfter(TimeSpan.FromSeconds(8));
+                try { _files = await _vm.QuestionFilesAsync(_folder, budget.Token); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException or ArgumentException or System.Security.SecurityException)
+                { _files = null; }
+                token.ThrowIfCancellationRequested();
+                _ready = _files is not null;
+            }
+            var input = FolderQuestions.BuildInput(_folder, _files, question);
             var answer = await FolderQuestions.AskAsync(input, token);
             token.ThrowIfCancellationRequested();
-            _input = null;
             Body.Text = answer;
-            SectionTitle.Text = "OpenAI 답변";
+            AnswerPanel.Visibility = Visibility.Visible;
+            Send.Visibility = Visibility.Collapsed;
             var saved = await _vm.RememberAnswerAsync(_folder, question, answer);
             Status.Text = saved ? "분석에 저장됨" : "현재 세션에만 보관됨";
         }
@@ -92,7 +79,7 @@ public partial class FolderQuestionWindow : Window
         finally
         {
             _sending = false;
-            Send.IsEnabled = _input is not null;
+            Send.IsEnabled = Send.Visibility == Visibility.Visible;
             DeleteChoice.IsEnabled = PurposeChoice.IsEnabled = true;
         }
     }

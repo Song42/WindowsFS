@@ -3,6 +3,8 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Windows;
+using WindowsFS.App.Controls;
 using WindowsFS.App.Services;
 using WindowsFS.Core;
 using WindowsFS.Core.Persistence;
@@ -41,6 +43,21 @@ internal static partial class Program
         Check(vm.HasQuestionFolder, "Indexed selection did not expose folder questions.");
         var oldNode = vm.QuestionFolder!;
         Check(await vm.RememberAnswerAsync(oldNode, FolderQuestions.DeleteQuestion, answer), "Answer save failed.");
+        var dialog = new FolderQuestionWindow(vm, oldNode);
+        try
+        {
+            dialog.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+            Equal(answer, dialog.Body.Text);
+            Equal(Visibility.Visible, dialog.AnswerPanel.Visibility);
+            Equal(Visibility.Collapsed, dialog.Send.Visibility);
+            dialog.PurposeChoice.IsChecked = true;
+            // Unshown test windows have IsLoaded=false; run the same initial-view update.
+            dialog.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+            Equal("", dialog.Body.Text);
+            Equal(Visibility.Collapsed, dialog.AnswerPanel.Visibility);
+            Check(dialog.Send.IsEnabled, "An unanswered question cannot be sent.");
+        }
+        finally { dialog.Close(); }
         var reopened = CreateViewModel(scanner, store);
         await reopened.RestoreLastScanAsync();
         Equal(answer, reopened.FindFolderAnswer(source, FolderQuestions.DeleteQuestion)!.Text);
@@ -59,6 +76,8 @@ internal static partial class Program
             Equal("https://api.openai.com/v1/responses", request.RequestUri!.AbsoluteUri);
             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
             Equal(expectedInput, body.RootElement.GetProperty("input").GetString()!);
+            Equal("gpt-6.2-sol", body.RootElement.GetProperty("model").GetString()!);
+            Equal("medium", body.RootElement.GetProperty("reasoning").GetProperty("effort").GetString()!);
             Check(!body.RootElement.GetProperty("store").GetBoolean(), "OpenAI response storage was enabled.");
             Check(!body.RootElement.GetRawText().Contains("fixture-token"), "Credential appeared in the payload.");
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(
