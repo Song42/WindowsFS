@@ -64,6 +64,32 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SystemItemCatalog _systemCatalog;
     public CleanupViewModel Cleanup { get; }
     private Task? _pendingSave;
+    private string? _snapshotTarget;
+    private readonly Dictionary<(string Path, string Question), FolderAnswer> _folderAnswers = [];
+    internal FolderNode? QuestionFolder => DetailRow is { IsDirectory: true } row && _folders.TryGetValue(row.Path, out var folder) ? folder : null;
+    public bool HasQuestionFolder => QuestionFolder is not null;
+    internal FolderAnswer? FindFolderAnswer(string path, string question) => _folderAnswers.GetValueOrDefault((path, question));
+    internal async Task<IReadOnlyList<FileRecord>?> QuestionFilesAsync(FolderNode folder, CancellationToken token)
+    {
+        if (!ReferenceEquals(folder, QuestionFolder) || _fileBrowser is null) return null;
+        return await _fileBrowser.ReadAsync(folder.Path, token).WaitAsync(token);
+    }
+
+    internal async Task<bool> RememberAnswerAsync(FolderNode folder, string question, string text)
+    {
+        if (!IsIdle || !_folders.TryGetValue(folder.Path, out var indexed) || !ReferenceEquals(folder, indexed)) return false;
+        _folderAnswers[(folder.Path, question)] = new(folder.Path, question, text);
+        if (_store is null || _result is not { IsCancelled: false } || _scannedAtUtc is null) return false;
+        var snapshot = new SavedScan(_result, _snapshotTarget, _scannedAtUtc.Value) { Answers = _folderAnswers.Values.ToArray() };
+        IsSaving = true;
+        try
+        {
+            var save = SaveSnapshotAsync(snapshot);
+            _pendingSave = save;
+            return await save;
+        }
+        finally { _pendingSave = null; IsSaving = false; }
+    }
     private Task? _pendingDeletion;
     private CancellationTokenSource? _scanCancellation;
     private ScanResult? _result;
@@ -383,6 +409,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             }
             if (saved.Result.IsCancelled) throw new InvalidDataException("Incomplete saved scan.");
             await ApplyResultAsync(saved.Result);
+            _snapshotTarget = saved.SelectedPath;
+            foreach (var answer in saved.Answers) _folderAnswers[(answer.Path, answer.Question)] = answer;
             SelectPath(saved.SelectedPath);
             _resultScope = TargetLabel;
             _scannedAtUtc = saved.ScannedAtUtc;
@@ -467,7 +495,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 IsSaving = true;
                 Status = "분석 완료 · 저장 중";
-                _pendingSave = SaveSnapshotAsync(new SavedScan(result, _selectedPath, _scannedAtUtc.Value));
+                _snapshotTarget = _selectedPath;
+                _pendingSave = SaveSnapshotAsync(new SavedScan(result, _snapshotTarget, _scannedAtUtc.Value));
                 await _pendingSave;
             }
         }
@@ -509,6 +538,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             await _store!.DeleteAsync();
             HasSavedAnalysis = false;
             _result = null;
+            _folderAnswers.Clear();
             Cleanup.Reset();
             _folderFiles.Clear();
             _folders.Clear(); _parents.Clear(); _folderPath = null;
@@ -535,7 +565,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task SaveSnapshotAsync(SavedScan snapshot)
+    private async Task<bool> SaveSnapshotAsync(SavedScan snapshot)
     {
         try
         {
@@ -543,10 +573,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _snapshotSaved = true;
             HasSavedAnalysis = true;
             Status = "분석 완료 · 저장됨";
+            return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             Status = "분석 완료 · 저장 실패";
+            return false;
         }
     }
 
@@ -555,6 +587,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         // Indexing a saved tree does not touch any scanned paths or read their current metadata.
         var index = await Task.Run(() => IndexFolders(result.Roots));
         _result = result;
+        _folderAnswers.Clear();
         Cleanup.Reset();
         _folderFiles.Clear();
         _folders = index.Folders; _parents = index.Parents;
@@ -695,6 +728,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void NotifySystemInfo()
     {
+        Changed(nameof(HasQuestionFolder));
         Changed(nameof(SystemInfo)); Changed(nameof(CanShowSystemInfo));
         Changed(nameof(HasSystemInfo)); Changed(nameof(IsMapVisible));
         Changed(nameof(HasDetails)); Changed(nameof(HasDetailPanel)); Changed(nameof(CanPreview));

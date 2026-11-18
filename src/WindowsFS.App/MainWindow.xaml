@@ -376,6 +376,7 @@
                   </Grid>
                   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,0,8,0">
+                      <Button Content="질문하기" Click="AskFolderClick" Visibility="{Binding HasQuestionFolder, Converter={StaticResource Visible}}" IsEnabled="{Binding IsIdle}" HorizontalAlignment="Left" Margin="0,0,0,12" />
                       <Expander x:Name="GeneralSection" Header="General" IsExpanded="{Binding GeneralExpanded, Mode=TwoWay}" Foreground="{StaticResource Text}" HorizontalContentAlignment="Stretch" FontSize="13">
                         <StackPanel Margin="0,14,0,0" Visibility="{Binding HasDetails, Converter={StaticResource Visible}}">
                           <ItemsControl x:Name="DetailFields" ItemsSource="{Binding Details}">

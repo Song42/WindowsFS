@@ -89,7 +89,8 @@ public sealed class FileScanResultStore : IScanResultStore
             }
             return new SavedScan(new ScanResult(roots, document.LargestFiles, document.FileTypes,
                 document.TotalBytes, document.FileCount, document.FolderCount, document.SkippedCount,
-                TimeSpan.FromTicks(document.ElapsedTicks), false), document.SelectedPath, document.ScannedAtUtc);
+                TimeSpan.FromTicks(document.ElapsedTicks), false), document.SelectedPath, document.ScannedAtUtc)
+                { Answers = document.Answers };
         }
         catch (FileNotFoundException) { return null; }
         catch (DirectoryNotFoundException) { return null; }
@@ -172,6 +173,7 @@ public sealed class FileScanResultStore : IScanResultStore
         return new SnapshotDocument
         {
             Version = CurrentVersion,
+            Answers = snapshot.Answers,
             ScannedAtUtc = snapshot.ScannedAtUtc.ToUniversalTime(),
             SelectedPath = snapshot.SelectedPath,
             Folders = folders.ToArray(),
@@ -220,6 +222,8 @@ public sealed class FileScanResultStore : IScanResultStore
                     }
                 }
                 if (rootBytes != document.TotalBytes || rootFiles != document.FileCount) throw InvalidSnapshot();
+                if (document.Answers is null || document.Answers.Any(a => a is null || !paths.Contains(a.Path)
+                    || string.IsNullOrWhiteSpace(a.Question) || string.IsNullOrWhiteSpace(a.Text))) throw InvalidSnapshot();
                 for (var index = 0; index < document.Folders.Length; index++)
                     if (childBytes[index] > document.Folders[index].TotalBytes || childFiles[index] > document.Folders[index].FileCount)
                         throw InvalidSnapshot();
@@ -258,6 +262,7 @@ public sealed class FileScanResultStore : IScanResultStore
     {
         public SnapshotDocument() { }
         public required int Version { get; init; }
+        public FolderAnswer[] Answers { get; init; } = [];
         public required DateTimeOffset ScannedAtUtc { get; init; }
         public required string? SelectedPath { get; init; }
         public required FlatFolder[] Folders { get; init; }

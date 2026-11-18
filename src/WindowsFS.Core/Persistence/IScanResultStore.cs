@@ -1,7 +1,12 @@
 namespace WindowsFS.Core.Persistence;
 
 /// <summary>A completed scan and the original selection needed to restore the workspace.</summary>
-public sealed record SavedScan(ScanResult Result, string? SelectedPath, DateTimeOffset ScannedAtUtc);
+public sealed record SavedScan(ScanResult Result, string? SelectedPath, DateTimeOffset ScannedAtUtc)
+{
+    public FolderAnswer[] Answers { get; init; } = [];
+}
+
+public sealed record FolderAnswer(string Path, string Question, string Text);
 
 public interface IScanResultStore
 {
