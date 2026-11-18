@@ -200,17 +200,25 @@ public sealed class CleanupViewModel : INotifyPropertyChanged
         Changed(nameof(Files)); Changed(nameof(FilesStatus)); Changed(nameof(FilesLoading)); Changed(nameof(NoFiles));
         CommandManager.InvalidateRequerySuggested();
     }
+    internal async Task<CleanupContext> ReadContextAsync(CancellationToken token)
+    {
+        if (_contextReader is null) return CleanupContext.Empty with { InventoryStatus = "설치 등록 정보 미조회" };
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
+        budget.CancelAfter(TimeSpan.FromSeconds(10));
+        try { return await _contextReader.ReadAsync(budget.Token).WaitAsync(budget.Token); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        { return CleanupContext.Empty with { InventoryStatus = "설치 등록 정보 시간 초과 · 미분류 집계" }; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        { return CleanupContext.Empty with { InventoryStatus = "설치 등록 정보 접근 불가 · 미분류 집계" }; }
+    }
+
     private async Task LoadAsync(ScanResult result, CancellationToken token)
     {
         IsLoading = true; Status = "앱·용도별 집계 중";
         Changed(nameof(IsLoading)); Changed(nameof(Status)); Changed(nameof(NoGroups));
         try
         {
-            CleanupContext context;
-            try { context = _contextReader is null ? CleanupContext.Empty : await _contextReader.ReadAsync(token).WaitAsync(TimeSpan.FromSeconds(10), token); }
-            catch (TimeoutException) { context = CleanupContext.Empty with { InventoryStatus = "설치 등록 정보 시간 초과 · 미분류 집계" }; }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
-            { context = CleanupContext.Empty with { InventoryStatus = "설치 등록 정보 접근 불가 · 미분류 집계" }; }
+            var context = await ReadContextAsync(token);
             var groups = await Task.Run(() => CleanupAnalyzer.Analyze(result, context, token), token);
             if (token.IsCancellationRequested || !ReferenceEquals(result, _result)) return;
             _all = groups.Select(group => new CleanupGroupRow(group)).ToArray();

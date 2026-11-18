@@ -7,6 +7,11 @@ public sealed record CleanupContext(string Windows, string Profiles, string Prog
     public static CleanupContext Empty { get; } = new("", "", "", [], []);
 }
 public sealed record CleanupLocation(string Path, long Bytes, long FileCount);
+public sealed record FolderAssociation(string AppOrArea, string Purpose, string Evidence);
+public sealed record RelatedArea(FolderAssociation Match, long Bytes);
+public sealed record PurposeTotal(string Purpose, string Assessment, long Bytes, long Files);
+public sealed record FolderClassification(FolderAssociation Selected, IReadOnlyList<PurposeTotal> Purposes,
+    IReadOnlyList<RelatedArea> RelatedAreas, int FoldersExamined, string InventoryStatus);
 public sealed record CleanupPolicy(string Id, string Title, string Assessment, string Purpose, string Impact, string Method, string Source);
 public sealed record CleanupBucket(CleanupPolicy Policy, string Evidence, IReadOnlyList<CleanupLocation> Locations)
 {
@@ -51,12 +56,51 @@ public static class CleanupAnalyzer
 
     public static IReadOnlyList<CleanupGroup> Analyze(ScanResult result, CleanupContext context, CancellationToken token = default)
     {
-        var installs = context.InstalledApps.Where(app => ValidInstall(app.Location, context))
+        var groups = new Dictionary<(string Id, string Policy, string Evidence), (Match Match, List<CleanupLocation> Locations)>();
+        Visit(result.Roots, token, context, IndexInstalls(context), (folder, bytes, count, match) =>
+        {
+            var key = (match.Id, match.Policy.Id, match.Evidence);
+            if (!groups.TryGetValue(key, out var bucket)) groups[key] = bucket = (match, []);
+            bucket.Locations.Add(new(folder.Path, bytes, count));
+        });
+        return groups.Values.GroupBy(value => value.Match.Id).Select(group => new CleanupGroup(group.Key, group.First().Match.Name,
+            group.Select(value => new CleanupBucket(value.Match.Policy, value.Match.Evidence,
+                value.Locations.OrderByDescending(item => item.Bytes).ThenBy(item => item.Path, StringComparer.Ordinal).ToArray()))
+                .OrderByDescending(bucket => bucket.Bytes).ToArray()))
+            .OrderByDescending(group => group.Bytes).ThenBy(group => group.Name, StringComparer.Ordinal).ToArray();
+    }
+
+    public static FolderClassification DescribeFolder(FolderNode root, CleanupContext context, CancellationToken token = default)
+    {
+        var installs = IndexInstalls(context);
+        var selected = Classify(Normalize(root.Path), context, installs);
+        var purposes = new Dictionary<(string Title, string Assessment), (long Bytes, long Files)>();
+        var areas = new Dictionary<FolderAssociation, long>();
+        var examined = Visit([root], token, context, installs, (_, bytes, files, match) =>
+        {
+            var key = (match.Policy.Title, match.Policy.Assessment);
+            var previous = purposes.GetValueOrDefault(key);
+            purposes[key] = (previous.Bytes + bytes, previous.Files + files);
+            var association = new FolderAssociation(match.Name, match.Policy.Title, match.Evidence);
+            areas[association] = areas.GetValueOrDefault(association) + bytes;
+        });
+        return new(new(selected.Name, selected.Policy.Title, selected.Evidence),
+            purposes.Select(p => new PurposeTotal(p.Key.Title, p.Key.Assessment, p.Value.Bytes, p.Value.Files))
+                .OrderByDescending(p => p.Bytes).ThenBy(p => p.Purpose, StringComparer.Ordinal).ToArray(),
+            areas.Select(a => new RelatedArea(a.Key, a.Value)).OrderByDescending(a => a.Bytes)
+                .ThenBy(a => a.Match.AppOrArea, StringComparer.Ordinal).ToArray(), examined, context.InventoryStatus);
+    }
+
+    private static Dictionary<string, InstalledApp[]> IndexInstalls(CleanupContext context) =>
+        context.InstalledApps.Where(app => ValidInstall(app.Location, context))
             .GroupBy(app => Normalize(app.Location), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.OrdinalIgnoreCase);
-        var groups = new Dictionary<(string Id, string Policy, string Evidence), (Match Match, List<CleanupLocation> Locations)>();
+
+    private static int Visit(IReadOnlyList<FolderNode> roots, CancellationToken token, CleanupContext context,
+        Dictionary<string, InstalledApp[]> installs, Action<FolderNode, long, long, Match> collect)
+    {
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var stack = new Stack<FolderNode>(result.Roots);
+        var stack = new Stack<FolderNode>(roots);
         while (stack.TryPop(out var folder))
         {
             token.ThrowIfCancellationRequested();
@@ -68,15 +112,9 @@ public static class CleanupAnalyzer
             var count = Math.Max(0, folder.FileCount - childCount);
             if (bytes == 0 && count == 0) continue;
             var match = Classify(Normalize(folder.Path), context, installs);
-            var key = (match.Id, match.Policy.Id, match.Evidence);
-            if (!groups.TryGetValue(key, out var bucket)) groups[key] = bucket = (match, []);
-            bucket.Locations.Add(new(folder.Path, bytes, count));
+            collect(folder, bytes, count, match);
         }
-        return groups.Values.GroupBy(value => value.Match.Id).Select(group => new CleanupGroup(group.Key, group.First().Match.Name,
-            group.Select(value => new CleanupBucket(value.Match.Policy, value.Match.Evidence,
-                value.Locations.OrderByDescending(item => item.Bytes).ThenBy(item => item.Path, StringComparer.Ordinal).ToArray()))
-                .OrderByDescending(bucket => bucket.Bytes).ToArray()))
-            .OrderByDescending(group => group.Bytes).ThenBy(group => group.Name, StringComparer.Ordinal).ToArray();
+        return seen.Count;
     }
 
     private static Match Classify(string path, CleanupContext context, Dictionary<string, InstalledApp[]> installs)

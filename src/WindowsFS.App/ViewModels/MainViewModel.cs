@@ -9,6 +9,7 @@ using System.Windows.Input;
 using WindowsFS.App.Controls;
 using WindowsFS.App.Services;
 using WindowsFS.Core;
+using WindowsFS.Core.Cleanup;
 using WindowsFS.Core.Persistence;
 using WindowsFS.Core.SystemItems;
 
@@ -69,10 +70,34 @@ public sealed class MainViewModel : INotifyPropertyChanged
     internal FolderNode? QuestionFolder => DetailRow is { IsDirectory: true } row && _folders.TryGetValue(row.Path, out var folder) ? folder : null;
     public bool HasQuestionFolder => QuestionFolder is not null;
     internal FolderAnswer? FindFolderAnswer(string path, string question) => _folderAnswers.GetValueOrDefault((path, question));
-    internal async Task<IReadOnlyList<FileRecord>?> QuestionFilesAsync(FolderNode folder, CancellationToken token)
+    internal async Task<string> BuildQuestionInputAsync(FolderNode folder, string question, CancellationToken token)
     {
-        if (!ReferenceEquals(folder, QuestionFolder) || _fileBrowser is null) return null;
-        return await _fileBrowser.ReadAsync(folder.Path, token).WaitAsync(token);
+        if (!ReferenceEquals(folder, QuestionFolder) || _result is not { } result)
+            throw new FolderQuestionException("선택한 분석 폴더가 변경됨");
+        var scannedAt = _scannedAtUtc;
+        IReadOnlyList<FileRecord>? files = null;
+        var status = "미조회";
+        if (_fileBrowser is not null)
+        {
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
+            budget.CancelAfter(TimeSpan.FromSeconds(8));
+            try
+            {
+                files = await _fileBrowser.ReadAsync(folder.Path, budget.Token).WaitAsync(budget.Token);
+                status = "조회 완료";
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested) { status = "시간 초과"; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or System.Security.SecurityException)
+            { status = "조회 불가"; }
+        }
+        var readAt = DateTimeOffset.UtcNow;
+        var context = await Cleanup.ReadContextAsync(token);
+        var input = await Task.Run(() => FolderQuestions.BuildInput(folder, files, question,
+            CleanupAnalyzer.DescribeFolder(folder, context, token), scannedAt, result.IsCancelled, result.SkippedCount,
+            readAt, status), token);
+        if (!ReferenceEquals(result, _result) || !ReferenceEquals(folder, QuestionFolder))
+            throw new FolderQuestionException("선택한 분석 폴더가 변경됨");
+        return input;
     }
 
     internal async Task<bool> RememberAnswerAsync(FolderNode folder, string question, string text)

@@ -13,8 +13,6 @@ public partial class FolderQuestionWindow : Window
     private readonly MainViewModel _vm;
     private readonly FolderNode _folder;
     private readonly CancellationTokenSource _lifetime = new();
-    private IReadOnlyList<FileRecord>? _files;
-    private bool _ready;
     private bool _sending;
     private string Question => DeleteChoice.IsChecked == true ? FolderQuestions.DeleteQuestion : FolderQuestions.PurposeQuestion;
 
@@ -52,17 +50,8 @@ public partial class FolderQuestionWindow : Window
         Status.Text = "답변 요청 중";
         try
         {
-            if (!_ready)
-            {
-                using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
-                budget.CancelAfter(TimeSpan.FromSeconds(8));
-                try { _files = await _vm.QuestionFilesAsync(_folder, budget.Token); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException or ArgumentException or System.Security.SecurityException)
-                { _files = null; }
-                token.ThrowIfCancellationRequested();
-                _ready = _files is not null;
-            }
-            var input = FolderQuestions.BuildInput(_folder, _files, question);
+            var input = await _vm.BuildQuestionInputAsync(_folder, question, token);
+            token.ThrowIfCancellationRequested();
             var answer = await FolderQuestions.AskAsync(input, token);
             token.ThrowIfCancellationRequested();
             Body.Text = answer;

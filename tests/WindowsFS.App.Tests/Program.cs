@@ -69,6 +69,7 @@ internal static partial class Program
             ("Disk free-space reads reject stale responses and handle inaccessible and multiple volumes", DiskSpaceFailures),
             ("Drive-root charts retain free space, preserve bytes and restore subfolder proportions", RootFreeSpaceCharts),
             ("Folder questions send bounded metadata with Sol medium and restore answers with their scan", FolderQuestionsRoundTrip),
+            ("Folder questions partition purposes and disclose missing samples within token budgets", FolderQuestionCoverage),
             ("Breadcrumb navigation preserves exact indexed ancestors without scanning", BreadcrumbNavigation),
             ("Actual breadcrumb buttons navigate the saved folder tree", BreadcrumbXaml),
             ("Folder browsing reads metadata without changing the source tree", ReadOnlyFolderBrowsing),
