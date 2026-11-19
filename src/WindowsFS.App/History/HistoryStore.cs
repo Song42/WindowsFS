@@ -14,7 +14,8 @@ internal record HistoryRow(long Time, string Path, string Action, string Program
     public string Delta => Change is long n ? (n < 0 ? "−" : n > 0 ? "+" : "") + Size(n) : "—";
     public string Freed => Reclaimed is long n ? Size(n) : "—";
     public static string Size(long n) => DisplayFormat.Bytes(Math.Abs(n));
-    public string Details => $"{Path}\n{When}  ·  {Action}  ·  {Program}\n논리 크기  {Known(Before)} → {Known(After)}    |    할당량  {Known(BeforeAllocated)} → {Known(AfterAllocated)}    |    삭제 회수 추정  {Freed}\n{Evidence}";
+    public string LogicalRange => $"{Known(Before)} → {Known(After)}";
+    public string AllocatedRange => $"{Known(BeforeAllocated)} → {Known(AfterAllocated)}";
     private static string Known(long? bytes) => bytes is long n ? Size(n) : "미확인";
 }
 

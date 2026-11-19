@@ -412,6 +412,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsFolders => _view == "folders";
     public bool IsTypes => _view == "types";
     public bool IsCleanup => _view == "cleanup";
+    public bool IsHistory => _view == "history";
+    public bool IsAnalysisPage => !IsHistory;
     public bool ShowStandardResults => HasResult && !IsCleanup;
     public bool ShowCleanupResults => HasResult && IsCleanup;
     public bool IsAllDrivesSelected => _selectedPath is null;
@@ -434,10 +436,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string Speed => _elapsed.TotalSeconds > 0 ? $"{_files / _elapsed.TotalSeconds:N0} 파일/초" : "분석 대기";
     public string Skipped => _skipped.ToString("N0");
     public string ScanState => IsDeleting ? "삭제 중" : IsRestoring ? "불러오는 중" : IsSaving ? "저장 중" : IsBusy ? "분석 중" : _result is null ? "준비됨" : _result.IsCancelled ? "부분 결과" : _isRestored ? "저장된 분석" : "분석 완료";
-    public string PageTitle => _view switch { "files" => "가장 큰 파일", "folders" => "폴더 탐색", "types" => "파일 형식", "cleanup" => "정리 분석", _ => "대시보드" };
-    public string PageDescription => _view switch { "files" => "", "folders" => "폴더별 용량 · 두 번 클릭: 하위 폴더 열기", "types" => "확장자별 용량 합계", "cleanup" => "앱·용도별 대상 크기 · 정리 영향·판단 근거", _ => "파일·폴더별 용량 분포" };
+    public string PageTitle => _view switch { "files" => "가장 큰 파일", "folders" => "폴더 탐색", "types" => "파일 형식", "cleanup" => "정리 분석", "history" => "용량 기록", _ => "대시보드" };
+    public string PageDescription => _view switch { "files" or "history" => "", "folders" => "폴더별 용량 · 두 번 클릭: 하위 폴더 열기", "types" => "확장자별 용량 합계", "cleanup" => "앱·용도별 대상 크기 · 정리 영향·판단 근거", _ => "파일·폴더별 용량 분포" };
     public bool ShowPageDescription => PageDescription.Length > 0;
-    public bool ShowScanControls => !IsFiles && !IsCleanup;
+    public bool ShowScanControls => !IsFiles && !IsCleanup && !IsHistory;
     public string TableTitle => _view switch { "folders" => "폴더 및 파일", "types" => "형식별 사용량", _ => "가장 큰 파일" };
     public bool ShowTableTitle => _view != "files";
     public string TableHint => _view == "folders" ? "선택: 시스템 항목 설명 · 두 번 클릭: 폴더 열기" : _view == "types" ? "확장자 없는 파일 포함" : "";
@@ -767,6 +769,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         RefreshBreadcrumbs();
         foreach (var name in new[] { nameof(PageTitle), nameof(PageDescription), nameof(ShowPageDescription), nameof(ShowScanControls), nameof(TableTitle), nameof(ShowTableTitle), nameof(TableHint), nameof(ShowTableHint), nameof(ShowMap), nameof(ShowFolderNavigation), nameof(Breadcrumb), nameof(MapTitle), nameof(IsOverview), nameof(IsDetailView), nameof(IsFiles), nameof(IsFolders), nameof(IsTypes) }) Changed(name);
         RefreshRows(); RefreshMap();
+        Changed(nameof(IsHistory)); Changed(nameof(IsAnalysisPage));
         Changed(nameof(IsCleanup)); Changed(nameof(ShowStandardResults)); Changed(nameof(ShowCleanupResults));
         if (IsCleanup && _result is not null) Cleanup.Load(_result);
         _fileListTask = LoadFolderFilesAsync();
@@ -1025,7 +1028,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (_result is null) { Rows = []; return; }
         IEnumerable<ResultRow> rows = _view switch
         {
-            "cleanup" => [],
+            "cleanup" or "history" => [],
             "folders" => ScopeFolders().Select(n => new ResultRow(n.Name, n.Path, n.TotalBytes, n.FileCount, true, "폴더", Share(n.TotalBytes)))
                 .Concat(_folderPath is not null && _folderFiles.TryGetValue(_folderPath, out var files)
                     ? files.Select(f => new ResultRow(f.Name, f.Path, f.Size, -1, false,
@@ -1059,7 +1062,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void RefreshMap()
     {
-        if (_result is null) { MapItems = []; RefreshMapFreeSpace(); return; }
+        if (_result is null || IsHistory) { MapItems = []; RefreshMapFreeSpace(); return; }
         var scope = DiskRootMapPath is { } rootPath && _folders.TryGetValue(rootPath, out var root) ? root.Children :
             _view == "folders" ? ScopeFolders() : _result.Roots.Count == 1 ? _result.Roots[0].Children : _result.Roots;
         var entries = scope.Where(n => n.TotalBytes > 0).OrderByDescending(n => n.TotalBytes).ToList();

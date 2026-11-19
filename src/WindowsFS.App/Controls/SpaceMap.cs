@@ -296,7 +296,8 @@ public sealed class SpaceMap : FrameworkElement
         drawingContext.DrawText(text, area.TopLeft);
     }
 
-    private Brush ItemFill(int index) => _items[index].IsFreeSpace ? FreeSpaceFill : Palette[index % Palette.Length];
+    internal static Brush SeriesBrush(int index) => Palette[index % Palette.Length];
+    private Brush ItemFill(int index) => _items[index].IsFreeSpace ? FreeSpaceFill : SeriesBrush(index);
     private string Share(MapItem item) => $"{(double)item.Size / _totalBytes * 100:0.#}%";
 
     private static string FormatBytes(long value)

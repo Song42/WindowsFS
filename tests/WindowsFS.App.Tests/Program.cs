@@ -38,6 +38,7 @@ internal static partial class Program
         var tests = new (string Name, Func<Task> Run)[]
         {
             ("Local history preserves allocation, deletion evidence, process attribution and retention", LocalHistory),
+            ("History page shares dashboard navigation and fits grouped records and file details", HistoryPageLayout),
             ("Local history observes live writes, renames and final deletion inside a fixture", LiveHistoryFixture),
             ("Cleanup groups every saved small file without double counts or unsafe cache guesses", CleanupSavedGrouping),
             ("Cleanup dashboard navigation and read-only grouping reuse saved analysis", CleanupNavigation),

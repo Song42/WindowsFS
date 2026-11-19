@@ -17,16 +17,18 @@ public partial class MainWindow : Window
     private bool _closeAfterPersistence;
     private bool _waitingForPersistence;
     private readonly History.HistoryRecorder _history = new();
-    private History.HistoryWindow? _historyWindow;
     private System.Windows.Forms.NotifyIcon? _tray;
     private bool _exiting;
-    private async void OpenHistory(object sender, RoutedEventArgs e)
+    private void HistoryLoaded(object sender, RoutedEventArgs e)
     {
-        if (_historyWindow != null) { _historyWindow.Activate(); return; }
-        _historyWindow = new(_history, () => _viewModel.HistoryRoots, EnsureTray) { Owner = this };
-        _historyWindow.Closed += (_, _) => _historyWindow = null;
-        _historyWindow.Show();
-        await _historyWindow.RefreshAsync();
+        ((History.HistoryView)sender).Connect(_history, () => _viewModel.HistoryRoots, EnsureTray);
+    }
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        // The scan shortcuts belong to the analysis pages, including while tracking in the tray.
+        if (DataContext is MainViewModel { IsHistory: true } && e.Key is Key.F5 or Key.Escape)
+            e.Handled = true;
+        base.OnPreviewKeyDown(e);
     }
     private void EnsureTray()
     {
@@ -134,7 +136,7 @@ public partial class MainWindow : Window
     {
         if (_tray != null && !_exiting)
         {
-            e.Cancel = true; _historyWindow?.Close(); Hide(); return;
+            e.Cancel = true; Hide(); return;
         }
         _viewModel.Cancel();
         if (_closeAfterPersistence || (!_viewModel.IsSaving && !_viewModel.IsDeleting)) return;

@@ -1,5 +1,7 @@
 using System.IO;
 using System.Text;
+using System.Windows;
+using System.Windows.Controls;
 using WindowsFS.App.History;
 using WindowsFS.Core.Cleanup;
 
@@ -7,6 +9,58 @@ namespace WindowsFS.App.Tests;
 
 internal static partial class Program
 {
+    private static Task HistoryPageLayout()
+    {
+        var vm = CreateViewModel(new StubScanner((_, _, _) => throw new Exception("History navigation started a scan.")));
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            var content = (FrameworkElement)window.Content;
+            Render(content);
+            var entry = (Button)window.FindName("DashboardHistoryButton");
+            entry.Command.Execute(entry.CommandParameter);
+            Render(content);
+            var page = Descendants<HistoryView>(content).Single();
+            Check(vm.IsHistory && vm.PageTitle == "용량 기록" && !vm.ShowScanControls &&
+                !IsEffectivelyVisible((FrameworkElement)window.FindName("AnalysisResults")), "Scan UI overlaps the history page.");
+            var groups = (DataGrid)page.FindName("Groups");
+            var files = (DataGrid)page.FindName("Files");
+            var path = FixturePath + "\\" + new string('a', 180) + ".bin";
+            var records = Enumerable.Range(0, 48).Select(i => new HistoryRow(1_800_000_000_000L - i / 8 * 60000, path + i,
+                "변경", "테스트 프로그램", "캐시", "테스트 경로", 0, 8192, 8192, null)).ToList();
+            page.DisplayRecords(records);
+            long start = records[0].Time - 3600000;
+            page.DisplaySamples(Enumerable.Range(0, 121).Select(i => new VolumePoint(start + i * 30000L, @"X:\",
+                93_000_000_000 + (long)(Math.Sin(i / 12.0) * 500_000_000) - i * 100_000_000L, "fixture")).ToList(), start, records[0].Time);
+            groups.SelectedIndex = 0;
+            foreach (var size in new[] { new Size(1440, 920), new Size(1100, 760), new Size(800, 550) })
+            {
+                LayoutAt(content, size);
+                var details = (Border)page.FindName("DetailArea");
+                Check(IsEffectivelyVisible(details) && groups.ActualHeight >= groups.ColumnHeaderHeight + groups.RowHeight * 2 &&
+                    files.ActualHeight >= files.ColumnHeaderHeight + files.RowHeight &&
+                    details.TranslatePoint(new Point(0, details.ActualHeight), content).Y <= size.Height + 1,
+                    $"Records or selected file details were clipped at {size} (groups {groups.ActualHeight}, files {files.ActualHeight}, bottom {details.TranslatePoint(new Point(0, details.ActualHeight), content).Y}).");
+            }
+            var selected = groups.SelectedItem;
+            page.DisplayRecords([..records]);
+            Check(ReferenceEquals(selected, groups.SelectedItem), "An unchanged refresh replaced the selected group.");
+            ((Button)page.FindName("OperationsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(groups.Columns.Last().Visibility == Visibility.Collapsed, "Byte columns obscured process operations.");
+            page.DisplayRecords([]);
+            page.DisplaySamples([], start, records[0].Time);
+            Check(((TextBlock)page.FindName("StartLabel")).Text.Length == 0, "An empty chart retained its previous axis.");
+            Check(((Border)page.FindName("DetailArea")).Visibility == Visibility.Collapsed &&
+                ((TextBlock)page.FindName("EmptyList")).Visibility == Visibility.Visible, "Empty history retained stale file details.");
+            var back = (Button)window.FindName("DashboardBackButton");
+            back.Command.Execute(back.CommandParameter);
+            Render(content);
+            Check(vm.IsOverview && !IsEffectivelyVisible((FrameworkElement)window.FindName("HistoryHost")), "Dashboard return retained the history page.");
+        }
+        finally { window.Close(); }
+        return Task.CompletedTask;
+    }
+
     private static Task LocalHistory()
     {
         using var fixture = new PickerFixture();

@@ -1,0 +1,148 @@
+<UserControl x:Class="WindowsFS.App.History.HistoryView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Foreground="{StaticResource Text}" FontFamily="Segoe UI Variable, Malgun Gothic, Segoe UI" UseLayoutRounding="True">
+  <UserControl.Resources>
+    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+      <Setter Property="Padding" Value="10,4"/>
+    </Style>
+    <Style x:Key="Caption" TargetType="TextBlock" BasedOn="{StaticResource MutedText}">
+      <Setter Property="FontSize" Value="11"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+    <Style x:Key="SwitchRail" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource Background}"/><Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="3"/>
+    </Style>
+    <Style x:Key="HistoryCell" TargetType="TextBlock">
+      <Setter Property="VerticalAlignment" Value="Center"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+      <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+    </Style>
+    <Style x:Key="Quantity" TargetType="TextBlock" BasedOn="{StaticResource HistoryCell}">
+      <Setter Property="TextAlignment" Value="Right"/><Setter Property="Margin" Value="0,0,8,0"/>
+    </Style>
+  </UserControl.Resources>
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/><RowDefinition Height="1*" MaxHeight="214"/>
+      <RowDefinition Height="2.3*"/><RowDefinition x:Name="DetailRow" Height="0"/>
+    </Grid.RowDefinitions>
+      <Grid Margin="0,0,0,14">
+        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
+          <TextBlock Text="{Binding PageTitle}" FontSize="28" FontWeight="SemiBold"/>
+          <Grid Margin="0,4,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MaxWidth="240"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <TextBlock x:Name="StateText" Text="추적 꺼짐" Style="{StaticResource Caption}" Foreground="{StaticResource Accent}" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+            <TextBlock Grid.Column="1" x:Name="ScopeText" Style="{StaticResource Caption}" Margin="12,0,0,0"/>
+          </Grid>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="DetailButton" IsEnabled="False" Content="프로그램 추적" Click="DetailClick" Padding="14,7" Margin="0,0,8,0" ToolTip="Windows 권한 승인 후 쓰기·삭제 요청 관찰"/>
+          <Button x:Name="TrackButton" IsEnabled="False" Content="추적 시작" Click="TrackClick" Padding="18,7" Style="{StaticResource Primary}"/>
+        </StackPanel>
+      </Grid>
+    <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16,8" Margin="0,0,0,10">
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBlock Text="볼륨 여유 공간" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <StackPanel Grid.Column="1" Orientation="Horizontal">
+            <Button x:Name="ResetButton" Content="시간 선택 해제" Padding="10,4" Margin="0,0,6,0" Click="ResetTime" Visibility="Collapsed"/>
+            <Border Style="{StaticResource SwitchRail}">
+              <StackPanel Orientation="Horizontal" AutomationProperties.Name="조회 기간">
+                <Button x:Name="DayButton" Style="{StaticResource MapMode}" Content="24시간" Tag="True" CommandParameter="24" Click="SelectPeriod"/>
+                <Button x:Name="WeekButton" Style="{StaticResource MapMode}" Content="7일" CommandParameter="168" Click="SelectPeriod"/>
+                <Button x:Name="MonthButton" Style="{StaticResource MapMode}" Content="30일" CommandParameter="720" Click="SelectPeriod"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Grid>
+        <Grid Grid.Row="1" Margin="0,6">
+          <Border BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1"/>
+          <Canvas x:Name="Plot" Background="Transparent" ClipToBounds="True" SizeChanged="PlotResized" MouseLeftButtonDown="PickTime" ToolTip="선택한 시각의 기록"/>
+          <TextBlock x:Name="EmptyPlot" Style="{StaticResource Caption}" Text="여유 공간 기록 없음" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+        </Grid>
+        <Grid Grid.Row="2">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBlock x:Name="StartLabel" Style="{StaticResource Caption}"/>
+          <TextBlock Grid.Column="1" x:Name="VolumeText" Style="{StaticResource Caption}" TextAlignment="Center" Margin="8,0" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+          <TextBlock Grid.Column="2" x:Name="EndLabel" Style="{StaticResource Caption}"/>
+        </Grid>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2" Style="{StaticResource Card}" Padding="14,8">
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+        <DockPanel>
+          <Border DockPanel.Dock="Right" x:Name="SortRail" Style="{StaticResource SwitchRail}">
+            <StackPanel Orientation="Horizontal" AutomationProperties.Name="기록 정렬">
+              <Button x:Name="RecentButton" Style="{StaticResource MapMode}" Tag="True" Content="최근순" Click="SelectSort"/>
+              <Button x:Name="SizeButton" Style="{StaticResource MapMode}" Content="용량순" Click="SelectSort"/>
+            </StackPanel>
+          </Border>
+          <Border Style="{StaticResource SwitchRail}" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal" AutomationProperties.Name="기록 유형">
+              <Button x:Name="ChangesButton" Tag="True" Content="파일 변화" Style="{StaticResource MapMode}" Click="SelectMode"/>
+              <Button x:Name="OperationsButton" Content="프로그램 작업" Style="{StaticResource MapMode}" Click="SelectMode"/>
+            </StackPanel>
+          </Border>
+        </DockPanel>
+        <Grid Grid.Row="1" Margin="2,5,2,6">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+          <TextBlock x:Name="TotalsText" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <TextBlock x:Name="RangeText" Grid.Column="1" Style="{StaticResource Caption}" TextAlignment="Right" Margin="10,0,0,0" VerticalAlignment="Center" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+        </Grid>
+        <Grid Grid.Row="2">
+          <DataGrid x:Name="Groups" SelectionChanged="GroupSelected" CanUserSortColumns="False" RowHeight="34" ColumnHeaderHeight="28">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="시각" Binding="{Binding When}" Width="106" ElementStyle="{StaticResource HistoryCell}"/>
+              <DataGridTextColumn Header="관찰된 프로그램" Binding="{Binding Program}" Width="1.4*" MinWidth="100" ElementStyle="{StaticResource HistoryCell}"/>
+              <DataGridTextColumn Header="작업" Binding="{Binding Action}" Width="*" MinWidth="72" ElementStyle="{StaticResource HistoryCell}"/>
+              <DataGridTextColumn x:Name="PurposeColumn" Header="용도" Binding="{Binding Purpose}" Width="*" MinWidth="70" ElementStyle="{StaticResource HistoryCell}"/>
+              <DataGridTextColumn Header="파일 수" Binding="{Binding Count}" Width="68" ElementStyle="{StaticResource Quantity}"/>
+              <DataGridTextColumn x:Name="ChangeColumn" Header="할당량 변화" Binding="{Binding Delta}" Width="105" ElementStyle="{StaticResource Quantity}"/>
+              <DataGridTextColumn x:Name="FreedColumn" Header="삭제 회수 추정" Binding="{Binding Freed}" Width="116" ElementStyle="{StaticResource Quantity}"/>
+            </DataGrid.Columns>
+          </DataGrid>
+          <TextBlock x:Name="EmptyList" Style="{StaticResource Caption}" Text="이 기간의 기록 없음" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,28,0,0" IsHitTestVisible="False"/>
+        </Grid>
+      </Grid>
+    </Border>
+    <Border Grid.Row="3" x:Name="DetailArea" Visibility="Collapsed" Style="{StaticResource Card}" Margin="0,10,0,0" Padding="14,8">
+      <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="1.3*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Grid Margin="0,0,12,0">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+          <TextBlock Text="포함된 파일" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,5"/>
+          <DataGrid x:Name="Files" Grid.Row="1" RowHeight="32" ColumnHeaderHeight="27">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="경로" Binding="{Binding Path}" Width="*" MinWidth="90" ElementStyle="{StaticResource HistoryCell}"/>
+              <DataGridTextColumn x:Name="FileChangeColumn" Header="할당량 변화" Binding="{Binding Delta}" Width="100" ElementStyle="{StaticResource Quantity}"/>
+              <DataGridTextColumn x:Name="FileFreedColumn" Header="삭제 회수 추정" Binding="{Binding Freed}" Width="110" ElementStyle="{StaticResource Quantity}"/>
+            </DataGrid.Columns>
+          </DataGrid>
+        </Grid>
+        <Border Grid.Column="1" BorderBrush="{StaticResource Border}" BorderThickness="1,0,0,0" Padding="12,0,0,0">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel DataContext="{Binding SelectedItem, ElementName=Files}">
+              <TextBlock Text="세부정보" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,5"/>
+              <TextBlock Text="{Binding Path}" TextWrapping="Wrap" FontSize="12"/>
+              <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,5" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}">
+                <Run Text="{Binding When, Mode=OneWay}"/> · <Run Text="{Binding Action, Mode=OneWay}"/> · <Run Text="{Binding Program, Mode=OneWay}"/>
+              </TextBlock>
+              <Grid x:Name="SizeFields">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Text="논리 크기" Style="{StaticResource Caption}"/><TextBlock Grid.Column="1" Text="{Binding LogicalRange}" Margin="12,0" FontSize="12"/>
+                <TextBlock Grid.Row="1" Text="할당량" Style="{StaticResource Caption}"/><TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding AllocatedRange}" Margin="12,0" FontSize="12"/>
+                <TextBlock Grid.Row="2" Text="삭제 회수 추정" Style="{StaticResource Caption}"/><TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Freed}" Margin="12,0" FontSize="12"/>
+              </Grid>
+              <TextBlock Text="{Binding Evidence}" FontSize="11" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+            </StackPanel>
+          </ScrollViewer>
+        </Border>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>
