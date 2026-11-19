@@ -207,6 +207,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private Task? _pendingDeletion;
     private CancellationTokenSource? _scanCancellation;
     private ScanResult? _result;
+    internal string[] HistoryRoots => _result?.Roots.Select(root => root.Path).ToArray() ?? [];
     private Dictionary<string, FolderNode> _folders = new(StringComparer.Ordinal);
     private Dictionary<string, string> _parents = new(StringComparer.Ordinal);
     private string? _selectedPath;

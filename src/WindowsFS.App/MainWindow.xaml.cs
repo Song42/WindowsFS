@@ -16,6 +16,48 @@ public partial class MainWindow : Window
     private readonly MainViewModel _viewModel = new();
     private bool _closeAfterPersistence;
     private bool _waitingForPersistence;
+    private readonly History.HistoryRecorder _history = new();
+    private History.HistoryWindow? _historyWindow;
+    private System.Windows.Forms.NotifyIcon? _tray;
+    private bool _exiting;
+    private async void OpenHistory(object sender, RoutedEventArgs e)
+    {
+        if (_historyWindow != null) { _historyWindow.Activate(); return; }
+        _historyWindow = new(_history, () => _viewModel.HistoryRoots, EnsureTray) { Owner = this };
+        _historyWindow.Closed += (_, _) => _historyWindow = null;
+        _historyWindow.Show();
+        await _historyWindow.RefreshAsync();
+    }
+    private void EnsureTray()
+    {
+        if (_tray != null) return;
+        var menu = new System.Windows.Forms.ContextMenuStrip();
+        menu.Items.Add("열기", null, (_, _) => RestoreWindow());
+        var toggle = menu.Items.Add("추적 일시 정지", null, async (_, _) =>
+        {
+            if (_history.Active) await _history.PauseAsync();
+            else _history.Start(_viewModel.HistoryRoots, true);
+        });
+        menu.Opening += (_, _) => toggle.Text = _history.Active ? "추적 일시 정지" : "추적 재개";
+        menu.Items.Add("종료", null, async (_, _) =>
+        {
+            if (_exiting) return;
+            _exiting = true;
+            await _history.PauseAsync().WaitAsync(TimeSpan.FromSeconds(4)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+            Close();
+        });
+        _tray = new() { Icon = System.Drawing.SystemIcons.Application, Text = "WindowsFS · 용량 기록", ContextMenuStrip = menu, Visible = true };
+        _tray.MouseClick += (_, args) => { if (args.Button == System.Windows.Forms.MouseButtons.Left) RestoreWindow(); };
+    }
+    internal void RestoreWindow()
+    {
+        Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate();
+    }
+    internal void EndUserSession()
+    {
+        _exiting = true;
+        _history.PauseAsync().Wait(TimeSpan.FromSeconds(2));
+    }
     private HwndSource? _windowSource;
     private Thumb? _resizeThumb;
     private double _resizePointerX, _resizeStartWidth;
@@ -42,6 +84,12 @@ public partial class MainWindow : Window
         Width = Math.Min(Width, workArea.Width);
         Height = Math.Min(Height, workArea.Height);
         DataContext = _viewModel;
+        _viewModel.PropertyChanged += async (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.HasResult) && _history.Active &&
+                !_viewModel.HistoryRoots.Order().SequenceEqual(_history.Roots.Order(), StringComparer.OrdinalIgnoreCase))
+                await _history.PauseAsync();
+        };
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -69,6 +117,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _tray?.ContextMenuStrip?.Dispose(); _tray?.Dispose();
         if (_windowSource is { IsDisposed: false }) _windowSource.RemoveHook(WindowMessage);
         _windowSource = null;
         base.OnClosed(e);
@@ -83,6 +132,10 @@ public partial class MainWindow : Window
 
     private async void WindowClosing(object? sender, CancelEventArgs e)
     {
+        if (_tray != null && !_exiting)
+        {
+            e.Cancel = true; _historyWindow?.Close(); Hide(); return;
+        }
         _viewModel.Cancel();
         if (_closeAfterPersistence || (!_viewModel.IsSaving && !_viewModel.IsDeleting)) return;
         e.Cancel = true;

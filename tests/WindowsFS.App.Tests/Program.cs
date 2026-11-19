@@ -37,6 +37,8 @@ internal static partial class Program
         };
         var tests = new (string Name, Func<Task> Run)[]
         {
+            ("Local history preserves allocation, deletion evidence, process attribution and retention", LocalHistory),
+            ("Local history observes live writes, renames and final deletion inside a fixture", LiveHistoryFixture),
             ("Cleanup groups every saved small file without double counts or unsafe cache guesses", CleanupSavedGrouping),
             ("Cleanup dashboard navigation and read-only grouping reuse saved analysis", CleanupNavigation),
             ("Cleanup cancellation rejects stale inventories after analysis changes", CleanupCancellation),
@@ -112,6 +114,8 @@ internal static partial class Program
             ("Known folder explanations follow navigation and support dismissing", SystemFolderNavigation),
             ("Actual XAML renders the selected system explanation", SystemItemXaml)
         };
+        if (Microsoft.Diagnostics.Tracing.Session.TraceEventSession.IsElevated()==true)
+            tests=[..tests,("Local history observes real ETW writes and deletes inside a fixture",LiveProcessHistory)];
         if (args.Length == 2 && args[0] == "--filter")
             tests = tests.Where(test => test.Name.Contains(args[1], StringComparison.OrdinalIgnoreCase)).ToArray();
         if (tests.Length == 0) return 2;

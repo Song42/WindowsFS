@@ -73,8 +73,8 @@
           </Grid>
         </Border>
         <StackPanel x:Name="DashboardNavigation" Grid.Row="2" Visibility="{Binding IsOverview, Converter={StaticResource Visible}}">
-          <UniformGrid x:Name="DashboardCards" Columns="4" Height="74" Margin="0,0,0,8">
-            <Button x:Name="DashboardFilesButton" Command="{Binding NavigateCommand}" CommandParameter="files" Style="{StaticResource DashboardLink}" Margin="0,0,12,0" AutomationProperties.Name="가장 큰 파일">
+          <UniformGrid x:Name="DashboardCards" Columns="5" Height="74" Margin="0,0,0,8">
+            <Button x:Name="DashboardFilesButton" Command="{Binding NavigateCommand}" CommandParameter="files" Style="{StaticResource DashboardLink}" Margin="0,0,4,0" AutomationProperties.Name="가장 큰 파일">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20" Foreground="{StaticResource Accent}" Margin="0,0,14,0" VerticalAlignment="Center" />
@@ -87,7 +87,7 @@
                 </StackPanel>
               </Grid>
             </Button>
-            <Button x:Name="DashboardFoldersButton" Command="{Binding NavigateCommand}" CommandParameter="folders" Style="{StaticResource DashboardLink}" Margin="0,0,12,0" AutomationProperties.Name="폴더 탐색">
+            <Button x:Name="DashboardFoldersButton" Command="{Binding NavigateCommand}" CommandParameter="folders" Style="{StaticResource DashboardLink}" Margin="0,0,4,0" AutomationProperties.Name="폴더 탐색">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20" Foreground="#82B1E7" Margin="0,0,14,0" VerticalAlignment="Center" />
@@ -101,7 +101,7 @@
                 </StackPanel>
               </Grid>
             </Button>
-            <Button x:Name="DashboardTypesButton" Command="{Binding NavigateCommand}" CommandParameter="types" Style="{StaticResource DashboardLink}" Margin="0,0,12,0" AutomationProperties.Name="파일 형식">
+            <Button x:Name="DashboardTypesButton" Command="{Binding NavigateCommand}" CommandParameter="types" Style="{StaticResource DashboardLink}" Margin="0,0,4,0" AutomationProperties.Name="파일 형식">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <TextBlock Text="" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20" Foreground="#70BEB1" Margin="0,0,14,0" VerticalAlignment="Center" />
@@ -122,6 +122,15 @@
                   <Path Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronRight}" Stroke="{StaticResource Accent}" Margin="4,0,0,0" />
                 </StackPanel>
                 <TextBlock Text="앱·용도별 묶음" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
+              </StackPanel>
+            </Button>
+            <Button Click="OpenHistory" Style="{StaticResource DashboardLink}" Margin="4,0,0,0" AutomationProperties.Name="용량 기록">
+              <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="용량 기록" FontSize="15" FontWeight="SemiBold" />
+                  <Path Style="{StaticResource ChevronIcon}" Data="{StaticResource ChevronRight}" Margin="4,0,0,0" />
+                </StackPanel>
+                <TextBlock Text="프로그램·경로별 변화" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
               </StackPanel>
             </Button>
           </UniformGrid>

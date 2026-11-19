@@ -91,6 +91,16 @@ public static class CleanupAnalyzer
                 .ThenBy(a => a.Match.AppOrArea, StringComparer.Ordinal).ToArray(), examined, context.InventoryStatus);
     }
 
+    public static Func<string, FolderAssociation> CreatePathClassifier(CleanupContext context)
+    {
+        var installs = IndexInstalls(context);
+        return path =>
+        {
+            var match = Classify(Normalize(path), context, installs);
+            return new(match.Name, match.Policy.Title, match.Evidence);
+        };
+    }
+
     private static Dictionary<string, InstalledApp[]> IndexInstalls(CleanupContext context) =>
         context.InstalledApps.Where(app => ValidInstall(app.Location, context))
             .GroupBy(app => Normalize(app.Location), StringComparer.OrdinalIgnoreCase)
