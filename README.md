@@ -95,7 +95,7 @@ MP3, WAV, FLAC, AAC, M4A, Ogg/Opus, MP4, MKV, AVI, MOV 등 일반적인 오디�
 ./scripts/publish.ps1
 ```
 
-배포할 때마다 `.artifacts/publish/shared-chevrons-win-x64/`의 앱을 갱신해 최신 버전 하나만 유지합니다. 실행 파일은 이 폴더의 `WindowsFS.exe`이며, 다른 PC로 옮길 때는 런타임이 포함된 폴더 전체를 복사합니다. 기본 빌드는 x64입니다. `./scripts/publish.ps1 -Runtime win-arm64`를 실행하면 같은 위치에 ARM64용 앱을 배포합니다.
+배포할 때마다 `.artifacts/publish/win-x64/`의 앱을 갱신해 최신 버전 하나만 유지합니다. 실행 파일은 이 폴더의 `WindowsFS.exe`이며, 다른 PC로 옮길 때는 런타임이 포함된 폴더 전체를 복사합니다. 기본 빌드는 x64입니다. `./scripts/publish.ps1 -Runtime win-arm64`를 실행하면 같은 위치에 ARM64용 앱을 배포합니다.
 
 GitHub Actions는 Windows에서 빌드와 코어·WPF 테스트를 실행하고, 실행 파일과 런타임이 포함된 배포 폴더 생성을 검증합니다.
 
