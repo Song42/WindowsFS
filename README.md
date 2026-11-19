@@ -97,7 +97,7 @@ MP3, WAV, FLAC, AAC, M4A, Ogg/Opus, MP4, MKV, AVI, MOV 등 일반적인 오디�
 
 결과는 `.artifacts/publish/win-x64/`에 생성됩니다. 폴더 전체를 복사한 뒤 `WindowsFS.exe`를 실행하세요. 런타임이 포함되어 있어 대상 PC에 .NET을 별도로 설치할 필요가 없습니다. ARM64용 빌드는 `./scripts/publish.ps1 -Runtime win-arm64`로 생성할 수 있습니다.
 
-GitHub Actions도 Windows에서 빌드, 코어 검증, WPF 뷰 모델 검증을 수행하고, 실행 파일과 런타임이 담긴 `WindowsFS-win-x64` 아티팩트를 만듭니다.
+GitHub Actions는 Windows에서 빌드와 코어·WPF 테스트를 실행하고, 실행 파일과 런타임이 포함된 배포 폴더 생성을 검증합니다.
 
 ## 용량을 읽는 방법
 

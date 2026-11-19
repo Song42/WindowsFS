@@ -30,3 +30,7 @@ The user requires WindowsFS to remain a read-only analyzer of user and system fi
 - Test filesystem behavior only with isolated synthetic temporary fixtures. Never test creation/deletion using the user's files or real analysis cache.
 - Keep UI text limited to concise functional descriptions and statuses; do not add service, promotional, or imperative guidance messages.
 - Do not commit private file paths, scan caches, personal inventories, credentials, screenshots, or build output. Check `.gitignore` and the staged diff before uploading changes.
+
+## Build delivery
+
+- Use the runtime-specific publish directory from `scripts/publish.ps1` and link its `WindowsFS.exe` for delivery. Do not create or upload per-build ZIP archives for version history.
