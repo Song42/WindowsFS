@@ -33,4 +33,4 @@ The user requires WindowsFS to remain a read-only analyzer of user and system fi
 
 ## Build delivery
 
-- Use the runtime-specific publish directory from `scripts/publish.ps1` and link its `WindowsFS.exe` for delivery. Do not create or upload per-build ZIP archives for version history.
+- Use `scripts/publish.ps1` for each delivery. Update the single shared output at `.artifacts/publish/shared-chevrons-win-x64/` and link its `WindowsFS.exe`. Do not create version-specific publish directories or ZIP archives for version history.

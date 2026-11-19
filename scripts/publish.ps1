@@ -8,7 +8,7 @@ param(
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 Initialize-WindowsFSDotNet -RepositoryRoot $repositoryRoot
 $dotnet = Get-WindowsFSDotNet -RepositoryRoot $repositoryRoot
-$outputDirectory = Join-Path $repositoryRoot ".artifacts/publish/$Runtime"
+$outputDirectory = Join-Path $repositoryRoot '.artifacts/publish/shared-chevrons-win-x64'
 
 Push-Location -LiteralPath $repositoryRoot
 try {
